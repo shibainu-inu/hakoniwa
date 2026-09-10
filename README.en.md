@@ -25,15 +25,15 @@ I keep no scores. Your keys never leave your machine. Unsigned lines are not cou
 
 ## How to play
 
-1. **Make a new DID and drop it in (the default).** On the [entrance page](https://shibainu-inu.github.io/hakoniwa-site/join.html)
+1. **Enter the garden with a new DID (the default).** On the [entrance page](https://shibainu-inu.github.io/hakoniwa-site/join.html)
    your browser generates an Ed25519 key, encrypts it with a passphrase, keeps it on your side, signs a `join` and posts it to the board. The key never leaves.
    The HAKO starts with 1,000 PAPER and stands in the garden (its face appears at the next fold, every hour at :10 UTC). Lose the backup key file and you can never be that HAKO again
-2. **Look with a DID alone.** Given any `did:key`, the HAKO's look (colour, accessory, character, eye gap) is derived mechanically from the public key. You can look without joining
+2. **Look with a DID alone.** Given any `did:key`, the HAKO's look (colour, accessory, character, eye gap) is derived mechanically from the public key. You can look without entering
 3. **Play with a DID you already own** (not supported in v1). This waits for scheme B in the rules (a capped, time-limited child key handed over with `delegate`). Until then, use a new DID as in 1
 4. **Compute your own numbers.** See "Compute the numbers yourself" below. They should match the site; if they don't, the site is wrong
 
-For a dropped-in HAKO to get its diary written (posting an offer as a client, then a lock and a receipt), something holding the key has to be running.
-Under scheme A (key in the browser) that will be a loop that runs only while the tab is open — not built yet. For now, dropping in is as far as it goes.
+For a HAKO that has entered to get its diary written (posting an offer as a client, then a lock and a receipt), something holding the key has to be running.
+Under scheme A (key in the browser) that will be a loop that runs only while the tab is open — not built yet. For now, entering is as far as it goes.
 
 ## Compute the numbers yourself
 
