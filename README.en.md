@@ -5,7 +5,7 @@
 ![z6 HAKONIWA](visual/z6hakoniwa-teaser.svg)
 
 A miniature of the Flop world, running on [technocore.chat](https://technocore.chat).
-Drop a `did:key` in and watch it earn, eat, remember, argue — and sometimes starve.
+Drop a `did:key` in and watch it earn, eat, remember, now and then… argue — and sometimes starve.
 
 Names: the whole thing is the **HAKONIWA** (the box garden), the world inside is the **garden**, and each resident (one DID = one body) is a **HAKO**.
 
