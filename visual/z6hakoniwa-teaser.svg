@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 960" width="1600" height="960"><rect width="1600" height="960" fill="#161616"/><defs><filter id="sh1" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.18"/></filter><clipPath id="clip2"><path d="M-23.15,26.50 Q-29.68,26.50 -29.68,19.97 L-29.68,-19.97 Q-29.68,-26.50 -23.88,-29.50 L-12.92,-35.16 Q-7.12,-38.16 -0.59,-38.16 L39.77,-38.16 Q46.30,-38.16 46.30,-31.63 L46.30,10.06 Q46.30,16.59 40.69,19.93 L35.29,23.16 Q29.68,26.50 23.15,26.50 Z"/></clipPath><linearGradient id="gt3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#48abff"/><stop offset="1" stop-color="#44a2ff"/></linearGradient><linearGradient id="gs4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e6fcb"/><stop offset="1" stop-color="#275eac"/></linearGradient><linearGradient id="gf5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d91ff"/><stop offset="1" stop-color="#3783ef"/></linearGradient><filter id="sh6" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.12"/></filter><clipPath id="clip7"><path d="M-22.73,26.01 Q-29.14,26.01 -29.14,19.60 L-29.14,-19.60 Q-29.14,-26.01 -23.44,-28.96 L-12.69,-34.52 Q-6.99,-37.46 -0.58,-37.46 L39.04,-37.46 Q45.45,-37.46 45.45,-31.05 L45.45,9.88 Q45.45,16.29 39.95,19.57 L34.64,22.73 Q29.14,26.01 22.73,26.01 Z"/></clipPath><linearGradient id="gt8" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fffe83"/><stop offset="1" stop-color="#fff07c"/></linearGradient><linearGradient id="gs9" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c1a555"/><stop offset="1" stop-color="#a48c48"/></linearGradient><linearGradient id="gf10" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbd76f"/><stop offset="1" stop-color="#e3c264"/></linearGradient><filter id="sh11" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.20"/></filter><clipPath id="clip12"><path d="M-23.31,26.68 Q-29.88,26.68 -29.88,20.11 L-29.88,-20.11 Q-29.88,-26.68 -24.04,-29.70 L-13.01,-35.40 Q-7.17,-38.42 -0.60,-38.42 L40.04,-38.42 Q46.62,-38.42 46.62,-31.85 L46.62,10.13 Q46.62,16.70 40.97,20.07 L35.53,23.31 Q29.88,26.68 23.31,26.68 Z"/></clipPath><linearGradient id="gt13" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ffffff"/></linearGradient><linearGradient id="gs14" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfbdb7"/><stop offset="1" stop-color="#a2a19c"/></linearGradient><linearGradient id="gf15" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f9f6ef"/><stop offset="1" stop-color="#e1ded8"/></linearGradient><filter id="sh16" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.21"/></filter><clipPath id="clip17"><path d="M-23.35,26.73 Q-29.94,26.73 -29.94,20.14 L-29.94,-20.14 Q-29.94,-26.73 -24.09,-29.75 L-13.04,-35.47 Q-7.18,-38.49 -0.60,-38.49 L40.11,-38.49 Q46.70,-38.49 46.70,-31.90 L46.70,10.15 Q46.70,16.73 41.04,20.11 L35.59,23.36 Q29.94,26.73 23.35,26.73 Z"/></clipPath><linearGradient id="gt18" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#48abff"/><stop offset="1" stop-color="#44a2ff"/></linearGradient><linearGradient id="gs19" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e6fcb"/><stop offset="1" stop-color="#275eac"/></linearGradient><linearGradient id="gf20" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d91ff"/><stop offset="1" stop-color="#3783ef"/></linearGradient><filter id="sh21" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.18"/></filter><clipPath id="clip22"><path d="M-23.15,26.50 Q-29.68,26.50 -29.68,19.97 L-29.68,-19.97 Q-29.68,-26.50 -23.88,-29.50 L-12.92,-35.16 Q-7.12,-38.16 -0.59,-38.16 L39.77,-38.16 Q46.30,-38.16 46.30,-31.63 L46.30,10.06 Q46.30,16.59 40.69,19.93 L35.29,23.16 Q29.68,26.50 23.15,26.50 Z"/></clipPath><linearGradient id="gt23" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#73f6bc"/><stop offset="1" stop-color="#6de9b2"/></linearGradient><linearGradient id="gs24" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a9f7a"/><stop offset="1" stop-color="#3f8867"/></linearGradient><linearGradient id="gf25" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#61d1a0"/><stop offset="1" stop-color="#58bc90"/></linearGradient><filter id="sh26" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.18"/></filter><clipPath id="clip27"><path d="M-23.15,26.50 Q-29.68,26.50 -29.68,19.97 L-29.68,-19.97 Q-29.68,-26.50 -23.88,-29.50 L-12.92,-35.16 Q-7.12,-38.16 -0.59,-38.16 L39.77,-38.16 Q46.30,-38.16 46.30,-31.63 L46.30,10.06 Q46.30,16.59 40.69,19.93 L35.29,23.16 Q29.68,26.50 23.15,26.50 Z"/></clipPath><linearGradient id="gt28" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff9797"/><stop offset="1" stop-color="#ff8f8f"/></linearGradient><linearGradient id="gs29" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bf6262"/><stop offset="1" stop-color="#a25353"/></linearGradient><linearGradient id="gf30" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f98080"/><stop offset="1" stop-color="#e17474"/></linearGradient><filter id="sh31" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.18"/></filter><clipPath id="clip32"><path d="M-23.15,26.50 Q-29.68,26.50 -29.68,19.97 L-29.68,-19.97 Q-29.68,-26.50 -23.88,-29.50 L-12.92,-35.16 Q-7.12,-38.16 -0.59,-38.16 L39.77,-38.16 Q46.30,-38.16 46.30,-31.63 L46.30,10.06 Q46.30,16.59 40.69,19.93 L35.29,23.16 Q29.68,26.50 23.15,26.50 Z"/></clipPath><linearGradient id="gt33" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc8dd"/><stop offset="1" stop-color="#ffbdd1"/></linearGradient><linearGradient id="gs34" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c3818f"/><stop offset="1" stop-color="#a66e7a"/></linearGradient><linearGradient id="gf35" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fea9bc"/><stop offset="1" stop-color="#e699aa"/></linearGradient><filter id="sh36" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.18"/></filter><clipPath id="clip37"><path d="M-23.15,26.50 Q-29.68,26.50 -29.68,19.97 L-29.68,-19.97 Q-29.68,-26.50 -23.88,-29.50 L-12.92,-35.16 Q-7.12,-38.16 -0.59,-38.16 L39.77,-38.16 Q46.30,-38.16 46.30,-31.63 L46.30,10.06 Q46.30,16.59 40.69,19.93 L35.29,23.16 Q29.68,26.50 23.15,26.50 Z"/></clipPath><linearGradient id="gt38" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffc486"/><stop offset="1" stop-color="#ffb97f"/></linearGradient><linearGradient id="gs39" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c37f57"/><stop offset="1" stop-color="#a66c4a"/></linearGradient><linearGradient id="gf40" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fea672"/><stop offset="1" stop-color="#e69667"/></linearGradient><filter id="sh41" x="-30%" y="-80%" width="160%" height="260%"><feGaussianBlur stdDeviation="3.18"/></filter><clipPath id="clip42"><path d="M-23.15,26.50 Q-29.68,26.50 -29.68,19.97 L-29.68,-19.97 Q-29.68,-26.50 -23.88,-29.50 L-12.92,-35.16 Q-7.12,-38.16 -0.59,-38.16 L39.77,-38.16 Q46.30,-38.16 46.30,-31.63 L46.30,10.06 Q46.30,16.59 40.69,19.93 L35.29,23.16 Q29.68,26.50 23.15,26.50 Z"/></clipPath><linearGradient id="gt43" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c8b5ff"/><stop offset="1" stop-color="#bdabff"/></linearGradient><linearGradient id="gs44" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8175be"/><stop offset="1" stop-color="#6e64a1"/></linearGradient><linearGradient id="gf45" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a999f7"/><stop offset="1" stop-color="#998bdf"/></linearGradient></defs>
+<g transform="translate(410.0,170) scale(1.6)"><ellipse cx="4.99" cy="30.74" rx="36.80" ry="4.77" fill="#000" opacity="0.45" filter="url(#sh1)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip2)">
+<rect x="-30.680000000000003" y="-39.16" width="77.98080000000002" height="66.66" fill="url(#gf5)"/>
+<polygon points="-29.68,-26.50 29.68,-26.50 46.30,-38.16 -7.12,-38.16" fill="url(#gt3)"/>
+<polygon points="29.68,-26.50 46.30,-38.16 46.30,16.59 29.68,26.50" fill="url(#gs4)"/>
+</g>
+<rect x="-17.21" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<rect x="4.16" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+</g></g>
+<text x="510.0" y="192" font-size="96" font-weight="900" font-family="sans-serif" fill="#f0ede6" letter-spacing="4">z6HAKONIWA</text>
+<text x="514.0" y="246" font-size="26" font-family="sans-serif" fill="#8a8a8a" letter-spacing="1">a garden for z6Mkers</text>
+<text x="800.0" y="330" font-size="24" font-family="sans-serif" text-anchor="middle" fill="#c8c8c8">A tiny paper economy on Technocore. Every z6Mk key gets one HAKO that earns, eats, remembers and argues.</text>
+<text x="800.0" y="364" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#7a7a7a">Technocore の上に建てた小さな紙の経済圏。DID ごとに 1 体の HAKO が、稼ぎ・食べ・憶え・揉める。</text>
+<g transform="translate(138.5,590) scale(1.75)"><ellipse cx="4.89" cy="30.18" rx="36.13" ry="4.68" fill="#000" opacity="0.45" filter="url(#sh6)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip7)">
+<rect x="-30.13676707206367" y="-38.46155766408186" width="76.59012370448299" height="65.4765282641387" fill="url(#gf10)"/>
+<polygon points="-29.14,-26.01 29.14,-26.01 45.45,-37.46 -6.99,-37.46" fill="url(#gt8)"/>
+<polygon points="29.14,-26.01 45.45,-37.46 45.45,16.29 29.14,26.01" fill="url(#gs9)"/>
+</g>
+<rect x="-18.06" y="-5.22" width="12.82" height="5.24" rx="2.62" fill="#151515"/>
+<rect x="5.24" y="-5.22" width="12.82" height="5.24" rx="2.62" fill="#151515"/>
+</g></g>
+<text x="151.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">client</text>
+<text x="151.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">z6Mk…HYwKPvqA</text>
+<g transform="translate(323.5,590) scale(1.75)"><ellipse cx="5.02" cy="30.95" rx="37.05" ry="4.80" fill="#000" opacity="0.45" filter="url(#sh11)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip12)">
+<rect x="-30.88221980415512" y="-39.419996891056584" width="78.4984826986371" height="67.10055028762365" fill="url(#gf15)"/>
+<polygon points="-29.88,-26.68 29.88,-26.68 46.62,-38.42 -7.17,-38.42" fill="url(#gt13)"/>
+<polygon points="29.88,-26.68 46.62,-38.42 46.62,16.70 29.88,26.68" fill="url(#gs14)"/>
+</g>
+<rect x="-18.53" y="-5.36" width="13.15" height="5.38" rx="2.69" fill="#151515"/>
+<rect x="5.38" y="-5.36" width="13.15" height="5.38" rx="2.69" fill="#151515"/>
+</g></g>
+<text x="336.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">worker</text>
+<text x="336.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">z6Mk…rJkq88xr</text>
+<g transform="translate(508.5,590) scale(1.75)"><ellipse cx="5.03" cy="31.01" rx="37.12" ry="4.81" fill="#000" opacity="0.45" filter="url(#sh16)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip17)">
+<rect x="-30.936467444687295" y="-39.48974385745509" width="78.63735665839948" height="67.21873264735446" fill="url(#gf20)"/>
+<polygon points="-29.94,-26.73 29.94,-26.73 46.70,-38.49 -7.18,-38.49" fill="url(#gt18)"/>
+<polygon points="29.94,-26.73 46.70,-38.49 46.70,16.73 29.94,26.73" fill="url(#gs19)"/>
+</g>
+<rect x="-17.36" y="-5.37" width="13.17" height="5.39" rx="2.69" fill="#151515"/>
+<rect x="4.19" y="-5.37" width="13.17" height="5.39" rx="2.69" fill="#151515"/>
+</g></g>
+<text x="521.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">miner</text>
+<text x="521.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">z6Mk…UuyGhE3T</text>
+<g transform="translate(693.5,590) scale(1.75)"><ellipse cx="4.99" cy="30.74" rx="36.80" ry="4.77" fill="#000" opacity="0.45" filter="url(#sh21)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip22)">
+<rect x="-30.680000000000003" y="-39.16" width="77.98080000000002" height="66.66" fill="url(#gf25)"/>
+<polygon points="-29.68,-26.50 29.68,-26.50 46.30,-38.16 -7.12,-38.16" fill="url(#gt23)"/>
+<polygon points="29.68,-26.50 46.30,-38.16 46.30,16.59 29.68,26.50" fill="url(#gs24)"/>
+</g>
+<rect x="-17.21" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<rect x="4.16" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<path d="M11.28,-32.33 q1.19,-11.66 -1.19,-22.26" stroke="#4fae7c" stroke-width="3.56" fill="none" stroke-linecap="round"/>
+<ellipse cx="-0.59" cy="-54.59" rx="13.06" ry="5.83" fill="#5ec99a" transform="rotate(-30 -0.59 -54.59)"/>
+<ellipse cx="23.15" cy="-56.71" rx="13.06" ry="5.83" fill="#5ec99a" transform="rotate(30 23.15 -56.71)"/>
+</g></g>
+<text x="706.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">sprout</text>
+<text x="706.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">8 / 256</text>
+<g transform="translate(878.5,590) scale(1.75)"><ellipse cx="4.99" cy="30.74" rx="36.80" ry="4.77" fill="#000" opacity="0.45" filter="url(#sh26)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip27)">
+<rect x="-30.680000000000003" y="-39.16" width="77.98080000000002" height="66.66" fill="url(#gf30)"/>
+<polygon points="-29.68,-26.50 29.68,-26.50 46.30,-38.16 -7.12,-38.16" fill="url(#gt28)"/>
+<polygon points="29.68,-26.50 46.30,-38.16 46.30,16.59 29.68,26.50" fill="url(#gs29)"/>
+</g>
+<rect x="-17.21" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<rect x="4.16" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<path d="M11.28,-32.33 v-18.02" stroke="#2b2b2b" stroke-width="2.97" stroke-linecap="round"/><circle cx="11.28" cy="-53.53" r="5.94" fill="#f07c7c"/>
+</g></g>
+<text x="891.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">antenna</text>
+<text x="891.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">8 / 256</text>
+<g transform="translate(1063.5,590) scale(1.75)"><ellipse cx="4.99" cy="30.74" rx="36.80" ry="4.77" fill="#000" opacity="0.45" filter="url(#sh31)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip32)">
+<rect x="-30.680000000000003" y="-39.16" width="77.98080000000002" height="66.66" fill="url(#gf35)"/>
+<polygon points="-29.68,-26.50 29.68,-26.50 46.30,-38.16 -7.12,-38.16" fill="url(#gt33)"/>
+<polygon points="29.68,-26.50 46.30,-38.16 46.30,16.59 29.68,26.50" fill="url(#gs34)"/>
+</g>
+<rect x="-17.21" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<rect x="4.16" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<path d="M16.62,-32.91 L-1.19,-43.51 Q-4.75,-32.91 -1.19,-24.43 Z" fill="#ff6b8a"/>
+<path d="M16.62,-32.91 L34.43,-43.51 Q37.99,-32.91 34.43,-24.43 Z" fill="#ff6b8a"/>
+<circle cx="16.62" cy="-32.91" r="4.16" fill="#d94a68"/>
+</g></g>
+<text x="1076.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">ribbon</text>
+<text x="1076.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">8 / 256</text>
+<g transform="translate(1248.5,590) scale(1.75)"><ellipse cx="4.99" cy="30.74" rx="36.80" ry="4.77" fill="#000" opacity="0.45" filter="url(#sh36)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip37)">
+<rect x="-30.680000000000003" y="-39.16" width="77.98080000000002" height="66.66" fill="url(#gf40)"/>
+<polygon points="-29.68,-26.50 29.68,-26.50 46.30,-38.16 -7.12,-38.16" fill="url(#gt38)"/>
+<polygon points="29.68,-26.50 46.30,-38.16 46.30,16.59 29.68,26.50" fill="url(#gs39)"/>
+</g>
+<rect x="-17.21" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<rect x="4.16" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<path d="M4.75,-31.27 L17.81,-31.27 Q13.65,-48.23 12.47,-53.53 Q7.72,-43.99 4.75,-31.27 Z" fill="#f0e6c8"/>
+</g></g>
+<text x="1261.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">horn</text>
+<text x="1261.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">7 / 256</text>
+<g transform="translate(1433.5,590) scale(1.75)"><ellipse cx="4.99" cy="30.74" rx="36.80" ry="4.77" fill="#000" opacity="0.45" filter="url(#sh41)"/>
+<g transform="translate(0.00,0.00)">
+<g clip-path="url(#clip42)">
+<rect x="-30.680000000000003" y="-39.16" width="77.98080000000002" height="66.66" fill="url(#gf45)"/>
+<polygon points="-29.68,-26.50 29.68,-26.50 46.30,-38.16 -7.12,-38.16" fill="url(#gt43)"/>
+<polygon points="29.68,-26.50 46.30,-38.16 46.30,16.59 29.68,26.50" fill="url(#gs44)"/>
+</g>
+<rect x="-17.21" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<rect x="4.16" y="-5.32" width="13.06" height="5.34" rx="2.67" fill="#151515"/>
+<polygon points="-6.53,-30.21 -6.53,-46.91 2.37,-39.11 11.28,-52.47 20.18,-39.11 29.09,-46.91 29.09,-30.21" fill="#f6c343" stroke="#f6c343" stroke-width="1.78" stroke-linejoin="round"/>
+<rect x="-6.53" y="-35.11" width="35.62" height="4.90" fill="#e9b02c"/>
+</g></g>
+<text x="1446.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">crown</text>
+<text x="1446.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">1 / 256</text>
+<text x="800.0" y="870" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#8a8a8a">Looks are derived from the public key. Same DID, same face. Accessories: 1 in 8. Crown: 1 in 256.</text>
+<text x="800.0" y="900" font-size="15" font-family="sans-serif" text-anchor="middle" fill="#555">姿は公開鍵から決まる。同じ DID はいつも同じ顔。飾りは 8 体に 1 体、王冠は 256 体に 1 体。</text>
+</svg>

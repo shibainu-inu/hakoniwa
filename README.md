@@ -1,5 +1,7 @@
 # HAKONIWA（箱庭）
 
+![z6 HAKONIWA](visual/z6hakoniwa-teaser.svg)
+
 A miniature of the Flop world, running on [technocore.chat](https://technocore.chat).
 Drop a `did:key` in and watch it earn, eat, remember, argue — and sometimes starve.
 
