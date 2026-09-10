@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hakoniwa_fold.py v0.5 — 箱庭の集計。保存した export だけから、DID ごとの 5 つの数字を出す。
+"""hakoniwa_fold.py v0.7 — 箱庭の集計。保存した export だけから、DID ごとの 5 つの数字と席の状態を出す。
 
 使い方:
   python3 hakoniwa_fold.py --dir ~/hako_export [--json] [--out ~/hako_stats]
@@ -12,27 +12,29 @@
   --out <dir>  出力 JSON を <dir>/<YYYYMMDDTHHMMSSZ>.json と <dir>/latest.json に書く
 
 入力は technocore の /export（1 行 1 JSON: seq, ts, from, text, nonce, sig）。
-やること（正は HAKONIWA-RULES.md v0.6 と DECISIONS-for-rules-v0.5.md 決定 1〜12。書いていない計算はしない）:
+やること（正は HAKONIWA-RULES.md v0.7 と DECISIONS-for-rules-v0.5.md 決定 1〜14。書いていない計算はしない）:
   1. 全行の署名を検証する（room|nonce|text を Ed25519 で）。通らない行・did:key でない行は捨てて件数だけ残す
   2. 掲示板 /r/hakoniwa-board: rules / join / mem / serve / issue
-       join … 1,000 PAPER（joined）は最初の join だけ。役は最後の join。roles が無いか空なら worker と client。lang 省略時は en
+       join … 1,000 PAPER（joined）は最初の join だけ。役は最後の join。roles が無いか空なら worker と client。lang 省略時は en。
+               席（SEATS）に入れなかった join と、枯渇・卒業のあとの join は数えない（下の 6）
        mem  … 行ごとに (ts, bytes) を残す。家賃は 5 で引く
        serve … text の UTF-8 の sha256 が sha256 と一致するかを記録
-       issue … date（配る対象の日、UTC）ごとに最初の 1 件だけ。出せるのは、その時点で有効な rules を最後に出した DID。
-               pool が「その日に庭の外へ出た合計（推論の 15% ＋ 罰金の 20%）」を小数 2 桁で丸めた値と一致するときだけ、
-               その日に推論を買った支出に比例して払った DID へ配る（issued）。一致しなければ box.invalid_issue に残して配らない。
-               その日の推論支出がゼロなら配らない
+       issue … 運営の client への蛇口（v0.7）。出せるのは、その時点で有効な rules を最後に出した DID。to は運営の DID（OPERATOR_DIDS）で箱に入っているもの。
+               pool が「to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計」と小数 2 桁で一致するときだけ to に配る（issued）。
+               一致しなければ box.invalid_issue に残して配らない。同じ (date, to) は最初の 1 件。pool が 0 なら配らない
   3. /r/tclk-offers: offer / accept（asset PAPER、job.id が hakoniwa- で始まるものだけ）
        accept の contract は tclk_ids.contract_id で計算し直し、一致しないものは捨てて件数を残す。
        同じ offer に accept が複数あってよい（accept ごとに契約 id ができる）。有効なのは払う側が lock した契約だけ（決定 12）。
        payer が同じ offer に lock を 2 件以上出したら最初の 1 件（ts、同時なら seq）だけ数え、残りは lock_dup_offer。
-       同じ job.id は最初に lock された 1 本だけ（残りは job_dup）。lock されなかった契約は box.contracts_unlocked に残す
+       同じ job.id は最初に lock された 1 本だけ（残りは job_dup）。日記は 1 worker 1 日 1 本（worker_day_dup）、1 client 1 日 20 本まで
+       （client_day_limit）。日は UTC、lock の時刻。lock されなかった契約と落とした契約は box.contracts_unlocked に残す
        job.id に -test- を含む契約は試験用。状態は box.test_contracts に別に残し（claimed なら would_settle に動いたはずの額）、
        PAPER も発行も本番の数字に入れない
   4. 派生ルーム（tclk_ids.deal_room）: lock / reveal / receipt / refund と、納品行 diary / inf / keep
        lock は払う側、reveal は受け取り側のものだけ（各 1 件）。receipt(claimed) は払う側が出し、同じ部屋にその lock と reveal が
        先にあるときだけ動く（契約ごとに最初の 1 件）。欠けていれば無視して件数を残す
-       推論（hakoniwa-inf-）は 85% が受け取り側、15% は庭の外。日記代・預かり代は手数料なし
+       推論（hakoniwa-inf-）は 85% が受け取り側、15% は validator（receipt の時刻に有効な rules を最後に出した DID。無ければ庭の外）。
+       日記代・預かり代は手数料なし
        refund は払う側が、lock の後、offer の refundAfterMs 以降に出し、claimed の receipt が無いときだけ動く。
        未消化分＝lock した額の全部。その 20% を払う側の食費と庭の外（burn）に足し、80% は動かさない。
        refundAfterMs 前の refund は無視して件数を残す
@@ -48,6 +50,11 @@
        box.contracts: lock された契約ごとに 1 要素（契約の線の元データ。hako_avatar.links_from_box が読む）。
        contract / kind / payer / payee / room / locked_seq / locked_ts / settled_seq / settled_ts / outcome / dispute / test。
        時刻は unix 秒、outcome は receipt / refunded / null、test の契約も同じ配列に入れる（数字には入れない）
+  6. 席の層（お金の流れは変えない）。join は seq 順に席（SEATS=72、運営の DID を含む）まで。満席の join は数えない（1,000 も役も無い）。
+       退場は 3 つ: 枯渇 starved（貯えが STARVE_BELOW=240 を下回った時点。戻れない）、席を離れた left（00:00Z を 2 回、掲示板の行も
+       lock された契約への関わりも無いまま越えた。空席があれば join で戻れる）、卒業 graduated（累計の稼ぎが GRADUATE_EARN=1,500 に達した
+       receipt の時点。貯えは paper_total から外れて box.graduated_paper に載る。戻らない）。運営の DID は退場も卒業もしない。
+       席の無い DID との契約も数字には入る（避けるのは script の側）。数えない join の集合が変わらなくなるまで畳み直す
 出力 --json: {"box": {...}, "did": {did: {...}}}。did の値のキー名は README「fold の出力」の一覧で固定。
 """
 import sys, os, re, json, base64, hashlib, datetime as dt
@@ -62,7 +69,7 @@ import tclk_ids
 import hako_rules
 
 INITIAL = 1000
-MINER_SHARE = 0.85            # 推論代の 85% が miner、15% は庭の外へ
+MINER_SHARE = 0.85            # 推論代の 85% が miner、15% は validator（有効な rules を最後に出した DID）。validator が無ければ庭の外へ
 PENALTY_SHARE = 0.20          # 途中でやめた罰金: 未消化分（lock した額の全部）の 20% が庭の外へ
 RENT_PER_KIB_DAY = 1.0        # 記憶の家賃（仮）
 SLEEP_DAYS_TO_ERASE = 7       # 眠りがこの日数続いたら記憶は消える
@@ -73,6 +80,16 @@ JOB_PREFIX = "hakoniwa-"
 INF_PREFIX = "hakoniwa-inf-"
 TEST_MARK = "-test-"          # job.id にこれを含む契約は試験用（box.test_contracts に別集計）
 DEFAULT_ROLES = ["worker", "client"]
+# 運営の DID（HAKONIWA-RULES.md「役」）。席に数え、退場と卒業の対象外。issue の to に書けるのはこの DID だけ
+OPERATOR_DIDS = ("did:key:z6MkmG1MiumCr8Jk6vL5qt2A1XzEst6CVT5rwRHUHYwKPvqA",   # …PvqA client・validator・juror・keeper
+                 "did:key:z6Mkig6Ex8yT25TbmV7TFEJBGPAE8aq6DpXbZHMyrJkq88xr",   # …88xr worker・client・miner
+                 "did:key:z6Mkq52a8jJna9yBCGyTL6hbMuqQiMbxihFcuQeSUuyGhE3T")   # …hE3T miner・worker・client
+SEATS = 72                    # 席（運営の DID を含む）
+STARVE_BELOW = 240.0          # 枯渇: 貯えが一番安い推論代を下回る
+GRADUATE_EARN = 1500.0        # 卒業: 累計の稼ぎがこれに達した receipt
+LEAVE_AFTER_MIDNIGHTS = 2     # 席を離れる: 00:00Z を 2 回、何もしないまま越えた
+DIARY_PER_CLIENT_DAY = 20     # 1 つの client が 1 日（UTC、lock の時刻）に lock できる日記
+SEAT_ITERATIONS = 8           # 数えない join が変わらなくなるまで畳み直す回数の上限
 DEFAULT_LANG = "en"
 CONTEXT_KEYS = ("earn", "spend", "balance", "mem_bytes", "life_days")
 BOARD_KINDS = ("rules", "join", "mem", "serve", "issue")
@@ -185,46 +202,65 @@ def context_values(kv, path):
 # ── 集計 ──────────────────────────────────────────────────────────────
 
 def fold(entries, now=None, kv=None):
-    """entries: [(room, generation, row)]、kv: load_kv の戻り値 → {"box": ..., "did": ...}"""
+    """entries: [(room, generation, row)]、kv: load_kv の戻り値 → {"box": ..., "did": ...}
+
+    署名の検証は 1 回。席（SEATS）に入れなかった join と退場後の join は数えないので、その集合が変わらなくなるまで畳み直す
+    （数えない join の DID の取引は数えず、それが誰かの貯えと退場に響きうるため。普通は 1〜2 回で止まる）"""
     now = now or dt.datetime.now(dt.timezone.utc)
     kv = kv or {}
-    stats = {"rows": 0, "dup": 0, "unsigned": 0, "bad_sig": 0, "frames": 0,
-             "offers": 0, "accepts": 0, "accept_dup_offer": 0, "accept_bad_contract": 0,
-             "accept_self": 0, "accept_replay": 0, "lock_dup_offer": 0, "job_dup": 0, "contracts_unlocked": 0,
-             "deal_rows_ignored": 0, "receipts_ignored": 0, "refunds_ignored": 0,
-             "issue_not_rules_did": 0, "issue_dup": 0, "issue_bad": 0}
+    parse_stats = {"rows": 0, "dup": 0, "unsigned": 0, "bad_sig": 0, "frames": 0}
     seen = set()
     by_room = {}
     for room, gen, m in sorted(entries, key=lambda e: (e[0], e[1], int(e[2]["seq"]))):
-        stats["rows"] += 1
+        parse_stats["rows"] += 1
         key = (room, gen, int(m["seq"]))
-        if key in seen: stats["dup"] += 1; continue
+        if key in seen: parse_stats["dup"] += 1; continue
         seen.add(key)
         if not str(m["from"]).startswith("did:key:") or "sig" not in m or "nonce" not in m:
-            stats["unsigned"] += 1; continue
-        if not verify(room, m): stats["bad_sig"] += 1; continue
+            parse_stats["unsigned"] += 1; continue
+        if not verify(room, m): parse_stats["bad_sig"] += 1; continue
         pf = parse_frame(m["text"])
         if not pf: continue
-        stats["frames"] += 1
+        parse_stats["frames"] += 1
         by_room.setdefault(room, []).append((m, pf))
+    uncounted = set()
+    for _ in range(SEAT_ITERATIONS):
+        res = _fold_core(by_room, dict(parse_stats), now, kv, uncounted)
+        if res["_uncounted"] == uncounted: break
+        uncounted = res["_uncounted"]
+    res.pop("_uncounted")
+    return res
 
+
+def _fold_core(by_room, stats, now, kv, uncounted):
+    """uncounted: 数えない join の掲示板 seq の集合（席が無かった join、退場・卒業のあとの join）。席の層（_seats）が決める"""
+    stats.update({"offers": 0, "accepts": 0, "accept_dup_offer": 0, "accept_bad_contract": 0,
+                  "accept_self": 0, "accept_replay": 0, "lock_dup_offer": 0, "job_dup": 0, "worker_day_dup": 0,
+                  "client_day_limit": 0, "contracts_unlocked": 0,
+                  "deal_rows_ignored": 0, "receipts_ignored": 0, "refunds_ignored": 0,
+                  "issue_not_rules_did": 0, "issue_dup": 0, "issue_bad": 0, "issue_bad_to": 0,
+                  "join_no_seat": 0, "join_after_exit": 0})
     did = {}
     def D(d):
         return did.setdefault(d, {"roles": None, "lang": None, "joined": None, "earn": 0.0, "spend": 0.0,
                                   "issued": 0.0, "burn": 0.0, "mem_rows": [],   # mem_rows: (ts, bytes, note)
                                   "ledger": []})                                  # ledger: (ts, kind, amount)
-    burn_by_date = defaultdict(float)                     # 庭の外へ出た額（推論 15% ＋ 罰金 20%）
-    inf_spend_by_date = defaultdict(lambda: defaultdict(float))   # date → 払った DID → 推論支出
+    burn_by_date = defaultdict(float)                     # 庭の外へ出た額（罰金 20% ＋ validator が無いときの推論 15%）
+    joins = []                                            # 掲示板の join 全部 (seq, ts, did)。席の層が数えるかを決める
+    activity = defaultdict(list)                          # did → [dt]。掲示板の行と、lock された契約への関わり（席を離れる判定）
 
     # 2. 掲示板
     rules, serves, issues = [], [], []
     for m, (kind, f) in by_room.get(BOARD_ROOM, []):
         if kind != "hako": continue
         t = f.get("t")
+        activity[m["from"]].append(parse_ts(m["ts"]))
         if t == "rules":
             if not isinstance(f.get("version"), str) or not isinstance(f.get("sha256"), str): continue
-            rules.append((m["seq"], f["version"], f["sha256"], m["from"]))
+            rules.append((m["seq"], f["version"], f["sha256"], m["from"], parse_ts(m["ts"])))
         elif t == "join":
+            joins.append((m["seq"], parse_ts(m["ts"]), m["from"]))
+            if m["seq"] in uncounted: continue                        # 席が無かった join、退場・卒業のあとの join
             x = D(m["from"])
             if x["joined"] is None: x["joined"] = m["ts"]            # 1,000 は最初の join だけ
             roles = f.get("roles")                                    # 役は最後の join。無いか空なら既定
@@ -239,8 +275,8 @@ def fold(entries, now=None, kv=None):
             serves.append({"seq": m["seq"], "ts": m["ts"], "from": m["from"], "sha256": f.get("sha256"),
                            "sha256_ok": isinstance(f.get("text"), str) and sha256_utf8(f["text"]) == f.get("sha256")})
         elif t == "issue":
-            issues.append({"seq": m["seq"], "ts": m["ts"], "from": m["from"], "date": f.get("date"), "pool": f.get("pool"),
-                           "status": None})
+            issues.append({"seq": m["seq"], "ts": m["ts"], "from": m["from"], "date": f.get("date"), "to": f.get("to"),
+                           "pool": f.get("pool"), "status": None})
 
     # 3. /r/tclk-offers: offer と accept。accept ごとに契約 id ができ（tclk SPEC §3.2）、どれが有効かは払う側の lock で決まる（決定 12）
     offers, cands = {}, {}
@@ -291,11 +327,17 @@ def fold(entries, now=None, kv=None):
         for _, _, cid in locks[1:]:
             cands[cid]["dropped"] = "lock_dup_offer"; stats["lock_dup_offer"] += 1
         winners.append(locks[0])
-    deals, job_seen = {}, set()
-    for _, _, cid in sorted(winners, key=lambda x: (x[0], x[1])):   # 同じ job.id（出し直し）は最初に lock された 1 本だけ
+    deals, job_seen, worker_day, client_day = {}, set(), set(), defaultdict(int)
+    for lock_ts, _, cid in sorted(winners, key=lambda x: (x[0], x[1])):   # 同じ job.id（出し直し）は最初に lock された 1 本だけ
         c = cands[cid]
         if c["job"] in job_seen: c["dropped"] = "job_dup"; stats["job_dup"] += 1; continue
-        job_seen.add(c["job"]); deals[cid] = c
+        job_seen.add(c["job"])
+        if c["kind"] == "diary" and not c["test"]:                           # 日記: 1 worker 1 日 1 本、1 client 1 日 20 本（日は lock の時刻、UTC）
+            day = lock_ts.strftime("%Y-%m-%d")
+            if (c["payee"], day) in worker_day: c["dropped"] = "worker_day_dup"; stats["worker_day_dup"] += 1; continue
+            if client_day[(c["payer"], day)] >= DIARY_PER_CLIENT_DAY: c["dropped"] = "client_day_limit"; stats["client_day_limit"] += 1; continue
+            worker_day.add((c["payee"], day)); client_day[(c["payer"], day)] += 1
+        deals[cid] = c
     unlocked = [{"contract": c["contract"], "job": c["job"], "accept_seq": c["accept_seq"], "payee": c["payee"], "dropped": c["dropped"]}
                 for c in cands.values() if c["contract"] not in deals]
     stats["contracts_unlocked"] = sum(1 for u in unlocked if u["dropped"] is None)
@@ -320,7 +362,7 @@ def fold(entries, now=None, kv=None):
                     if (f.get("outcome") == "claimed" and m["from"] == d["payer"] and d["lock"] and d["reveal"]
                             and d["settled"] is None and d["refund"] is None):
                         d["settled"] = {"seq": m["seq"], "ts": m["ts"]}
-                        _settle(D, d, m["ts"], burn_by_date, inf_spend_by_date)
+                        _settle(D, d, m["ts"], burn_by_date, _validator_at(rules, parse_ts(m["ts"])))
                     else:
                         stats["receipts_ignored"] += 1
                     d["receipt"] = d["receipt"] or {"seq": m["seq"], "from": m["from"], "outcome": f.get("outcome")}
@@ -355,6 +397,11 @@ def fold(entries, now=None, kv=None):
                        "revealed" if d["reveal"] else "locked" if d["lock"] else "accepted")
     for d in deals.values():
         d.setdefault("status", "accepted")
+        if d["lock"] and not d["test"]:                       # lock された契約への関わりは活動（席を離れる判定）
+            for who in (d["payer"], d["payee"]):
+                activity[who].append(parse_ts(d["lock"]["ts"]))
+                if d["settled"]: activity[who].append(parse_ts(d["settled"]["ts"]))
+                if d["refund"]: activity[who].append(parse_ts(d["refund"]["ts"]))
 
     # 4'. box.contracts: 契約の線の元データ（1 契約 1 要素、lock の無い契約は載せない）。
     #     キー名と値は hako_avatar.links_from_box に合わせる: settled_ts は unix 秒（now_ts − settled_ts で経過秒を出す）、
@@ -372,44 +419,46 @@ def fold(entries, now=None, kv=None):
         })
     contracts.sort(key=lambda c: (c["locked_ts"], c["locked_seq"]))   # seq は部屋ごとなので、まず時刻で並べる
 
-    # 2'. 発行（取引が畳めてから。issue の seq 順）
+    # 2'. 発行（取引が畳めてから。issue の seq 順）: 運営の client への蛇口。
+    #     to は運営の DID、pool は to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計。同じ (date, to) は最初の 1 件
+    diary_locked_by_date = defaultdict(float)             # (date, payer) → lock した日記の額の合計
+    for d in deals.values():
+        if d["kind"] == "diary" and d["lock"] and not d["test"]:
+            diary_locked_by_date[(parse_ts(d["lock"]["ts"]).strftime("%Y-%m-%d"), d["payer"])] += float(d["amount"])
     invalid_issue = []
-    issued_dates = set()
+    issued_keys = set()
     for iss in sorted(issues, key=lambda i: i["seq"]):
         ruler = next((r[3] for r in reversed(rules) if r[0] < iss["seq"]), None)
         if ruler is None or iss["from"] != ruler:
             stats["issue_not_rules_did"] += 1; iss["status"] = "ignored: not the rules DID"; continue
-        date = iss["date"]
+        date, to = iss["date"], iss["to"]
         try: pool = round(float(iss["pool"]), 2)
         except (TypeError, ValueError): pool = None
         if not isinstance(date, str) or not _DATE.match(date) or pool is None:
             stats["issue_bad"] += 1; iss["status"] = "ignored: bad date or pool"; continue
-        if date in issued_dates:
-            stats["issue_dup"] += 1; iss["status"] = "ignored: not the first issue for the date"; continue
-        issued_dates.add(date)
-        computed = round(burn_by_date.get(date, 0.0), 2)
+        if to not in OPERATOR_DIDS or D(to)["joined"] is None:
+            stats["issue_bad_to"] += 1; iss["status"] = "ignored: to is not an operator DID in the garden"; continue
+        if (date, to) in issued_keys:
+            stats["issue_dup"] += 1; iss["status"] = "ignored: not the first issue for the date and to"; continue
+        issued_keys.add((date, to))
+        computed = round(diary_locked_by_date.get((date, to), 0.0), 2)
         if pool != computed:
-            invalid_issue.append({"seq": iss["seq"], "date": date, "pool": pool, "computed": computed})
+            invalid_issue.append({"seq": iss["seq"], "date": date, "to": to, "pool": pool, "computed": computed})
             iss["status"] = f"invalid: pool {pool} != computed {computed}"; continue
-        spends = inf_spend_by_date.get(date) or {}
-        total = sum(spends.values())
-        if total <= 0 or pool <= 0:
-            iss["status"] = "no distribution: no inference spend that day" if total <= 0 else "no distribution: pool is 0"
-            continue
-        iss["shares"] = {}
-        for payer, s in spends.items():
-            share = pool * s / total
-            x = D(payer); x["issued"] += share; x["ledger"].append((iss["ts"], "issued", share))
-            iss["shares"][payer] = round(share, 2)
+        if pool <= 0:
+            iss["status"] = "no distribution: pool is 0"; continue
+        x = D(to); x["issued"] += pool; x["ledger"].append((iss["ts"], "issued", pool))
         iss["status"] = "distributed"
 
-    # 5. DID ごとの数字
+    # 5. DID ごとの数字と、席の層（席・退場・卒業）
+    ledgers = {d_: _ledger(x, now) for d_, x in did.items()}
+    seat = _seats(joins, activity, ledgers, did, now)
     out = {}
     today = now.strftime("%Y-%m-%d")
     week_ago = now - dt.timedelta(days=7)
     for d_, x in did.items():
         if x["joined"] is None: continue          # 箱に入っていない DID は数えない
-        led = _ledger(x, now)
+        led = ledgers[d_]
         balance = led["balance"]
         spend_7d = sum(a for ts, k, a in led["entries"] if k == "spend" and ts >= week_ago)
         daily = spend_7d / 7.0
@@ -424,12 +473,22 @@ def fold(entries, now=None, kv=None):
             "life_days": (round(balance / daily, 1) if daily > 0 else None),
             "earn_today": round(earn_today, 2), "spend_today": round(spend_today, 2),
             "mem_days_left": (round(balance / (mem_bytes / 1024 * RENT_PER_KIB_DAY), 1) if mem_bytes else None),
+            "operator": d_ in OPERATOR_DIDS,
+            "state": seat["state"].get(d_, ("seated", None))[0],
+            "state_since": _iso(seat["state"].get(d_, ("seated", None))[1]),
         }
+    stats["join_no_seat"] = len(seat["no_seat"]); stats["join_after_exit"] = len(seat["after_exit"])
+    graduated_paper = sum(v["balance"] for v in out.values() if v["state"] == "graduated")
     box = {"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
            "rules": [list(r[:3]) for r in rules], "rules_version": (rules[-1][1] if rules else None),
-           "rules_did": (rules[-1][3] if rules else None),
+           "rules_did": (rules[-1][3] if rules else None), "validator": (rules[-1][3] if rules else None),
+           "operators": list(OPERATOR_DIDS),
+           "seats": {"capacity": SEATS, "taken": seat["taken"], "free": SEATS - seat["taken"]},
+           "exits": {k: sum(1 for v in out.values() if v["state"] == k) for k in ("starved", "left", "graduated")},
+           "joins_uncounted": seat["no_seat"] + seat["after_exit"],
            "stats": stats, "receipts": sum(1 for d in deals.values() if d["settled"] and not d["test"]),
-           "paper_total": round(sum(v["balance"] for v in out.values()), 2),
+           "paper_total": round(sum(v["balance"] for v in out.values() if v["state"] != "graduated"), 2),
+           "graduated_paper": round(graduated_paper, 2),
            "burned": round(sum(x["burn"] for x in did.values()), 2),
            "burn_by_date": {k: round(v, 2) for k, v in sorted(burn_by_date.items())},
            "contracts": contracts,
@@ -437,11 +496,66 @@ def fold(entries, now=None, kv=None):
            "test_contracts": {c: d for c, d in deals.items() if d["test"]},
            "contracts_unlocked": unlocked,
            "serves": serves, "issues": issues, "invalid_issue": invalid_issue}
-    return {"box": box, "did": out}
+    return {"box": box, "did": out, "_uncounted": {j["seq"] for j in seat["no_seat"] + seat["after_exit"]}}
 
 
-def _settle(D, d, ts, burn_by_date, inf_spend_by_date):
-    """receipt(claimed) を払う側が出した: 払う側の食費、受け取り側の稼ぎ。推論は 85/15"""
+def _validator_at(rules, t):
+    """時刻 t に有効な rules を最後に出した DID（validator。推論代の 15% の受け取り手）。無ければ None"""
+    for r in reversed(rules):
+        if r[4] <= t: return r[3]
+    return None
+
+
+def _seats(joins, activity, ledgers, did, now):
+    """席の層。時刻順に join・活動・貯えと稼ぎの点・00:00Z を見て、席（SEATS）と退場（枯渇・席を離れる・卒業）を決める。
+    お金の流れは変えない（席の無い DID との契約も数字には入る。避けるのは script の側）。
+    → {"state": did → (state, since), "taken": 席の数, "no_seat": [join], "after_exit": [join]}
+       state: seated / left / starved / graduated / no_seat。運営の DID は退場も卒業もしない"""
+    events = []                                           # (dt, order, kind, payload)。order: 00:00Z 0 → 点 1 → 活動 2 → join 3
+    for seq, t, d in joins: events.append((t, 3, "join", (seq, d)))
+    for d, ts_list in activity.items():
+        for t in ts_list: events.append((t, 2, "act", d))
+    for d, led in ledgers.items():
+        if did[d]["joined"] is None: continue
+        for t, bal, earn_cum in led["points"]: events.append((t, 1, "point", (d, bal, earn_cum)))
+    if joins:
+        t = _next_midnight(min(j[1] for j in joins))
+        while t <= now: events.append((t, 0, "midnight", None)); t += dt.timedelta(days=1)
+    state, last_act, taken = {}, {}, 0
+    no_seat, after_exit = [], []
+    for t, _, kind, pl in sorted(events, key=lambda e: (e[0], e[1])):
+        if kind == "midnight":
+            for d, (st, since) in list(state.items()):
+                if st == "seated" and d not in OPERATOR_DIDS and last_act.get(d, t) < t - dt.timedelta(days=LEAVE_AFTER_MIDNIGHTS - 1):
+                    state[d] = ("left", t); taken -= 1
+        elif kind == "act":
+            last_act[pl] = max(last_act.get(pl, pl and t), t)
+        elif kind == "point":
+            d, bal, earn_cum = pl
+            st, _ = state.get(d, (None, None))
+            if st != "seated" or d in OPERATOR_DIDS: continue
+            if earn_cum >= GRADUATE_EARN: state[d] = ("graduated", t); taken -= 1
+            elif bal < STARVE_BELOW: state[d] = ("starved", t); taken -= 1
+        else:
+            seq, d = pl
+            st, _ = state.get(d, (None, None))
+            if st == "seated": continue                   # 席にいる DID の join（役や言葉の出し直し）は数える。席は変わらない
+            if st in ("starved", "graduated"):
+                after_exit.append({"seq": seq, "did": d, "ts": _iso(t), "why": st}); continue
+            if taken < SEATS:
+                state[d] = ("seated", t); taken += 1
+            else:
+                no_seat.append({"seq": seq, "did": d, "ts": _iso(t), "why": "full"})
+                if st is None: state[d] = ("no_seat", t)
+    return {"state": state, "taken": taken, "no_seat": no_seat, "after_exit": after_exit}
+
+
+def _iso(t):
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, dt.datetime) else None
+
+
+def _settle(D, d, ts, burn_by_date, validator):
+    """receipt(claimed) を払う側が出した: 払う側の食費、受け取り側の稼ぎ。推論は 85/15（15% は validator。無ければ庭の外）"""
     payer, payee, amt = D(d["payer"]), D(d["payee"]), float(d["amount"])
     if d["test"]:                                  # 試験用の契約: 動いたはずの額を残すだけで、数字には入れない
         got = amt * MINER_SHARE if d["kind"] == "inf" else amt
@@ -453,9 +567,12 @@ def _settle(D, d, ts, burn_by_date, inf_spend_by_date):
     payer["spend"] += amt; payer["ledger"].append((ts, "spend", amt))
     if d["kind"] == "inf":
         got = amt * MINER_SHARE
-        payee["earn"] += got; payee["burn"] += amt - got
-        burn_by_date[date] += amt - got
-        inf_spend_by_date[date][d["payer"]] += amt
+        fee = amt - got
+        payee["earn"] += got
+        if validator is not None and D(validator)["joined"] is not None:
+            v = D(validator); v["earn"] += fee; v["ledger"].append((ts, "earn", fee))
+        else:
+            payee["burn"] += fee; burn_by_date[date] += fee
     else:
         got = amt
         payee["earn"] += got
@@ -490,11 +607,13 @@ def _ledger(x, now):
         t = _next_midnight(mems[0][0])                      # 最初の請求は mem 行の後の最初の 00:00Z
         while t <= now:
             events.append((t, 1, "tick", 0.0)); t += dt.timedelta(days=1)
-    balance, spend, sleep, erased_at = float(INITIAL), 0.0, 0, None
+    balance, spend, earn_cum, sleep, erased_at = float(INITIAL), 0.0, 0.0, 0, None
     entries = []                                            # (dt, kind, amount)。家賃も spend として並ぶ
+    points = []                                             # (dt, その時点の貯え, 累計の稼ぎ)。席の層が枯渇と卒業を見る
     for t, _, kind, amount in sorted(events, key=lambda e: (e[0], e[1])):
         if kind == "earn" or kind == "issued":
             balance += amount; entries.append((t, kind, amount))
+            if kind == "earn": earn_cum += amount
         elif kind == "spend":
             balance -= amount; spend += amount; entries.append((t, kind, amount))
         else:                                               # tick: その時点で有効な mem の bytes ぶん
@@ -506,7 +625,8 @@ def _ledger(x, now):
             else:
                 sleep += 1
                 if sleep >= SLEEP_DAYS_TO_ERASE: erased_at = t   # 記憶は消える（以後、家賃も無い）
-    return {"balance": balance, "spend": spend, "sleep_days": sleep, "entries": entries,
+        points.append((t, balance, earn_cum))
+    return {"balance": balance, "spend": spend, "sleep_days": sleep, "entries": entries, "points": points,
             "mem_bytes": _mem_at(mems, now + dt.timedelta(seconds=1), erased_at)}
 
 
@@ -527,16 +647,17 @@ def print_text(res):
     print(f"rows {s['rows']}  dup {s['dup']}  unsigned {s['unsigned']}  bad_sig {s['bad_sig']}  frames {s['frames']}  "
           f"offers {s['offers']}  accepts {s['accepts']}  receipts {box['receipts']}")
     print(f"rules {box['rules']}")
-    print(f"PAPER in box {box['paper_total']}  burned {box['burned']}")
+    print(f"PAPER in box {box['paper_total']}  burned {box['burned']}  graduated {box['graduated_paper']}  "
+          f"seats {box['seats']['taken']}/{box['seats']['capacity']}  exits {box['exits']}  validator {str(box['validator'])[-4:]}")
     for d, v in out.items():
         short = d.replace("did:key:", "")[:4] + "…" + d[-4:]
         print(f"{short}  {','.join(v['roles'] or []):20} earn {v['earn']:8.1f}  spend {v['spend']:8.1f}  "
               f"issued {v['issued']:6.1f}  balance {v['balance']:8.1f}  mem {v['mem_bytes']}B  sleep {v['sleep_days']}  "
-              f"life {v['life_days']}")
+              f"life {v['life_days']}  {v['state']}{' (op)' if v['operator'] else ''}")
     for cid, d in box["deals"].items():
         print(f"deal {cid[:18]} {d['kind']:5} {d['amount']:>5} {d['status']:9} {d['job']}")
     for i in box["issues"]:
-        print(f"issue seq {i['seq']} {i['date']} pool {i['pool']}: {i['status']}")
+        print(f"issue seq {i['seq']} {i['date']} to {str(i['to'])[-4:]} pool {i['pool']}: {i['status']}")
 
 def write_out(res, out_dir):
     out_dir = Path(out_dir).expanduser(); out_dir.mkdir(parents=True, exist_ok=True)
