@@ -123,8 +123,9 @@ Limits: kanji numerals are not treated as digits. Digit runs are cut by `[0-9]+`
 
 ## The diary request (what the worker hands to the miner)
 
-The worker takes the numbers from the client's context note, fills in this template, stores the text as-is in its inference note
-(`/kv/hakoniwa-<worker's last 8, lowercased>/inf-<id>`) and puts up the `offer`. The miner runs it without looking inside.
+The worker takes the numbers from its own context note (`/kv/hakoniwa-<worker's last 8, lowercased>/diary-<YYYYMMDD>`, which it stores before
+accepting), fills in this template, stores the text as-is in its inference note (`/kv/hakoniwa-<worker's last 8, lowercased>/inf-<id>`) and puts up
+the `offer`. The miner runs it without looking inside.
 
 Japanese (`lang: ja`):
 

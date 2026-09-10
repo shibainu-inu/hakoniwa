@@ -35,6 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import tclk_ids  # noqa: E402
+import hako_rules  # noqa: E402
 
 BASE = os.environ.get("TECHNOCORE_URL", "https://technocore.chat")
 ROOT = Path(os.environ.get("HAKO_EXPORT_DIR", Path.home() / "hako_export"))
@@ -229,24 +230,30 @@ def save_note(path):
 
 
 def diary_contexts():
-    """保存済みの tclk-offers から、DEAL_DAYS 以内の hakoniwa-diary- offer の job.context を集める（重複なし、seq 順）"""
+    """保存済みの tclk-offers から、DEAL_DAYS 以内の hakoniwa-diary- offer の job.context（あれば）と、
+    その offer への accept ごとの worker のノート hako_rules.context_path(accept.from, "diary", offer の日) を集める（重複なし、seq 順）。
+    v0.7 では数字のノートは worker が置く（fold の合格条件 4 はこちらを読む）"""
     cutoff = now_z() - dt.timedelta(days=DEAL_DAYS)
-    seen, out = set(), []
+    seen, out, offers = set(), [], {}
+    def add(p):
+        if isinstance(p, str) and p not in seen:
+            seen.add(p); out.append(p)
     for m in iter_saved("tclk-offers"):
         f = tclk_ids.decode_frame(str(m.get("text", "")))
-        if not f or f.get("type") != "offer":
-            continue
-        job = f.get("job") if isinstance(f.get("job"), dict) else {}
-        ctx = job.get("context")
-        if not str(job.get("id", "")).startswith(DIARY_PREFIX) or not isinstance(ctx, str) or ctx in seen:
+        if not f:
             continue
         try:
             ts = dt.datetime.fromisoformat(str(m.get("ts")).replace("Z", "+00:00"))
         except ValueError:
             continue
-        if ts >= cutoff:
-            seen.add(ctx)
-            out.append(ctx)
+        if f.get("type") == "offer":
+            job = f.get("job") if isinstance(f.get("job"), dict) else {}
+            if not str(job.get("id", "")).startswith(DIARY_PREFIX) or ts < cutoff:
+                continue
+            offers[f.get("id")] = ts.strftime("%Y%m%d")
+            add(job.get("context"))
+        elif f.get("type") == "accept" and f.get("ref") in offers and isinstance(f.get("from"), str):
+            add(hako_rules.context_path(f["from"], "diary", offers[f["ref"]]))
     return out
 
 

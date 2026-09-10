@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""hako_rules.py — HAKONIWA-RULES.md v0.6「日記の合格条件」（DECISIONS 決定 9）の機械判定と、context ノートのパス。
+"""hako_rules.py — HAKONIWA-RULES.md v0.7「日記の合格条件」（DECISIONS 決定 9、14）の機械判定と、context ノートのパス。
 
     from hako_rules import check_diary, context_path
     ok, reason = check_diary(diary_frame, context_values, client_did, date_yyyymmdd, worker_did, meta=None)
+      v0.7: worker が自分の日記を書くので、条件 2 の for は worker の DID、条件 4 の context は worker のノートの 5 値（client_did は記録用）
     context_path(did, "diary", "20260909")  → "/kv/hakoniwa-<DID 末尾 8 文字を小文字>/diary-20260909"
     context_path(did, "inf", "6cfafe51-1")  → "/kv/hakoniwa-<DID 末尾 8 文字を小文字>/inf-6cfafe51-1"
       Technocore の名前空間は小文字・数字・-・_ のみ（大文字は 400）なので、末尾 8 文字は小文字にする（決定 11）
@@ -135,8 +136,8 @@ def check_diary_detail(diary_frame, context_values, client_did, date_yyyymmdd, w
 
     # 2. 宛先と日付
     c2 = []
-    if f.get("for") != client_did:
-        c2.append("for is not the client")
+    if f.get("for") != worker_did:
+        c2.append("for is not the worker")
     if _date8(f.get("date", "")) != _date8(date_yyyymmdd):
         c2.append("date is not the offer day")
     checks["2"] = not c2

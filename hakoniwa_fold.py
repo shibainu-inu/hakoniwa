@@ -39,8 +39,8 @@
        未消化分＝lock した額の全部。その 20% を払う側の食費と庭の外（burn）に足し、80% は動かさない。
        refundAfterMs 前の refund は無視して件数を残す
        diary 行は hako_rules.check_diary の結果を参考値として付ける。条件 4 の context は <dir>/kv/ の写し
-       （offer の job.context のパス。いちばん古い写し）を読む。写しが無ければ ok=null のまま。
-       job.context が hako_rules.context_path（末尾 8 文字は小文字）と違えば context_path_ok=false を付ける（判定には使わない）
+       （worker のノート hako_rules.context_path(payee, "diary", offer の日)。いちばん古い写し）を読む。写しが無ければ ok=null のまま。
+       条件 2 の for は worker の DID（v0.7: worker が自分の日記を書く）
   5. DID ごとに 稼ぎ(earn)・食費(spend)・貯え(balance)・記憶(mem_bytes)・余命(life_days) を出す
        貯え = 1,000 ＋ 稼ぎ ＋ 発行(issued) − 食費（取引・罰金・家賃）
        記憶の家賃は 00:00Z 刻み。各 00:00Z に、その時点で有効な mem（最後の mem 行）の bytes ぶん（1 KiB につき 1 PAPER）を引く。
@@ -383,16 +383,16 @@ def _fold_core(by_room, stats, now, kv, uncounted):
                 if ty in ("diary", "inf"): entry["model"] = f.get("model"); entry["text"] = f.get("text") if isinstance(f.get("text"), str) else None
                 if ty == "keep": entry["for"] = f.get("for"); entry["until"] = f.get("until")
                 d["deliveries"].append(entry)
-                if ty == "diary":
-                    ctx, copy, why = context_values(kv, d["context"])
+                if ty == "diary":                                  # v0.7: 数字のノートは worker（受け取り側）のもの、for も worker
+                    date8 = parse_ts(d["offer_ts"]).strftime("%Y%m%d")
+                    wpath = hako_rules.context_path(d["payee"], "diary", date8)
+                    ctx, copy, why = context_values(kv, wpath)
                     ok, reason, checks = hako_rules.check_diary_detail(
-                        f, ctx, d["payer"], parse_ts(d["offer_ts"]).strftime("%Y%m%d"), d["payee"],
+                        f, ctx, d["payer"], date8, d["payee"],
                         meta={"signer": m["from"], "room": room, "deal_room": d["room"],
                               "before_reveal": d["reveal"] is None})
                     d["diary_checks"].append({"seq": m["seq"], "ok": ok, "reason": reason, "checks": checks,
-                                              "context_copy": copy, "context_note": why,
-                                              "context_path_ok": d["context"] == hako_rules.context_path(
-                                                  d["payer"], "diary", parse_ts(d["offer_ts"]).strftime("%Y%m%d"))})
+                                              "context_path": wpath, "context_copy": copy, "context_note": why})
         d["status"] = ("claimed" if d["settled"] else "refunded" if d["refund"] else
                        "revealed" if d["reveal"] else "locked" if d["lock"] else "accepted")
     for d in deals.values():

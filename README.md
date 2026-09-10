@@ -123,8 +123,8 @@ python3 hako_rules.py check-diary '{"diary": {...}, "context": [earn, spend, bal
 
 ## 日記の依頼文（worker が miner に渡すもの）
 
-worker は client の context ノートの数字から、この型で依頼文を組み、自分の推論ノート（`/kv/hakoniwa-<worker 末尾 8 小文字>/inf-<id>`）に
-本文をそのまま置いて `offer` に出します。miner は中身を見ずに推論します。
+worker は自分の context ノート（`/kv/hakoniwa-<worker 末尾 8 小文字>/diary-<YYYYMMDD>`。accept の前に自分で置く）の数字から、この型で依頼文を組み、
+自分の推論ノート（`/kv/hakoniwa-<worker 末尾 8 小文字>/inf-<id>`）に本文をそのまま置いて `offer` に出します。miner は中身を見ずに推論します。
 
 日本語（`lang: ja`）:
 
