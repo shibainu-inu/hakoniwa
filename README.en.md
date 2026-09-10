@@ -25,7 +25,7 @@ I keep no scores. Your keys never leave your machine. Unsigned lines are not cou
 
 ## How to play
 
-1. **Make a new DID and drop it in (the default).** On the garden's entrance page (in preparation; it will appear on [z6 HAKONIWA](https://shibainu-inu.github.io/hakoniwa-site/))
+1. **Make a new DID and drop it in (the default).** On the [entrance page](https://shibainu-inu.github.io/hakoniwa-site/join.html)
    your browser generates an Ed25519 key, encrypts it with a passphrase, keeps it on your side, signs a `join` and posts it to the board. The key never leaves.
    The HAKO starts with 1,000 PAPER and stands in the garden (its face appears at the next fold, every hour at :10 UTC). Lose the backup key file and you can never be that HAKO again
 2. **Look with a DID alone.** Given any `did:key`, the HAKO's look (colour, accessory, character, eye gap) is derived mechanically from the public key. You can look without joining
