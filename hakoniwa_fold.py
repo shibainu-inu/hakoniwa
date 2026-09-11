@@ -90,6 +90,53 @@ GRADUATE_EARN = 1500.0        # 卒業: 累計の稼ぎがこれに達した rec
 LEAVE_AFTER_MIDNIGHTS = 2     # 席を離れる: 00:00Z を 2 回、何もしないまま越えた
 DIARY_PER_CLIENT_DAY = 20     # 1 つの client が 1 日（UTC、lock の時刻）に lock できる日記
 SEAT_ITERATIONS = 8           # 数えない join が変わらなくなるまで畳み直す回数の上限
+
+# ── 箱の設定（決定 16 ①）: hako_box.json（HAKO_BOX で場所を変えられる）。無ければ上の既定＝いまの値。読んだ値で上の定数を置き換える ──
+BOX_PATH = os.environ.get("HAKO_BOX") or str(Path(__file__).resolve().parent / "hako_box.json")
+BOX_DEFAULTS = {"box": "hakoniwa", "venue": "https://technocore.chat", "offers_room": OFFER_ROOM, "initial_paper": INITIAL,
+                "diary_price": 400, "inference_price": 240, "inference_min": 240, "graduate_at": GRADUATE_EARN, "seats": SEATS,
+                "starve_below": STARVE_BELOW, "leave_after_midnights": LEAVE_AFTER_MIDNIGHTS, "client_max_per_day": DIARY_PER_CLIENT_DAY,
+                "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
+                "validator_share": 0.15, "operators": list(OPERATOR_DIDS)}
+BOX_KEYS = tuple(BOX_DEFAULTS)
+
+
+def load_box(path=None):
+    """hako_box.json を読む → 設定の dict（既定を埋め、"_path" と "_sha256"（ファイルの bytes。無ければ None）を足す）。
+    "board" が無ければ "<box>-board"。知らないキーはそのまま残す（数えない）"""
+    p = Path(path or BOX_PATH)
+    cfg = dict(BOX_DEFAULTS); sha = None
+    if p.is_file():
+        raw = p.read_bytes(); sha = hashlib.sha256(raw).hexdigest()
+        cfg.update(json.loads(raw.decode("utf-8")))
+    cfg.setdefault("board", f"{cfg['box']}-board")
+    cfg["_path"] = str(p); cfg["_sha256"] = sha
+    return cfg
+
+
+def apply_box(cfg):
+    """設定で fold の定数を置き換える（値の意味と式は変えない）。hako_rules のノートの名前空間も箱の名前に合わせる。戻り値は cfg"""
+    global BOX, INITIAL, MINER_SHARE, BOARD_ROOM, OFFER_ROOM, JOB_PREFIX, INF_PREFIX, OPERATOR_DIDS, SEATS, STARVE_BELOW, GRADUATE_EARN
+    global LEAVE_AFTER_MIDNIGHTS, DIARY_PER_CLIENT_DAY
+    BOX = cfg
+    INITIAL = float(cfg["initial_paper"]) if isinstance(cfg["initial_paper"], float) else int(cfg["initial_paper"])
+    MINER_SHARE = round(1.0 - float(cfg["validator_share"]), 6)
+    BOARD_ROOM = str(cfg["board"]); OFFER_ROOM = str(cfg["offers_room"])
+    JOB_PREFIX = f"{cfg['box']}-"; INF_PREFIX = f"{cfg['box']}-inf-"
+    OPERATOR_DIDS = tuple(cfg["operators"])
+    SEATS = int(cfg["seats"]); STARVE_BELOW = float(cfg["starve_below"]); GRADUATE_EARN = float(cfg["graduate_at"])
+    LEAVE_AFTER_MIDNIGHTS = int(cfg["leave_after_midnights"]); DIARY_PER_CLIENT_DAY = int(cfg["client_max_per_day"])
+    hako_rules.NOTE_NS_PREFIX = f"{cfg['box']}-"
+    return cfg
+
+
+def box_summary(cfg=None):
+    """fold の出力 box.config: 箱の名前、設定ファイルの sha256、数えるのに使った値"""
+    cfg = cfg or BOX
+    return {"box": cfg["box"], "path": cfg["_path"], "sha256": cfg["_sha256"], "values": {k: cfg[k] for k in BOX_KEYS if k in cfg}, "board": cfg["board"]}
+
+
+BOX = apply_box(load_box())
 DEFAULT_LANG = "en"
 CONTEXT_KEYS = ("earn", "spend", "balance", "mem_bytes", "life_days")
 BOARD_KINDS = ("rules", "join", "mem", "serve", "issue")
@@ -494,7 +541,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         }
     stats["join_no_seat"] = len(seat["no_seat"]); stats["join_after_exit"] = len(seat["after_exit"])
     graduated_paper = sum(v["balance"] for v in out.values() if v["state"] == "graduated")
-    box = {"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    box = {"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "config": box_summary(),
            "rules": [list(r[:3]) for r in rules], "rules_version": (rules[-1][1] if rules else None),
            "rules_did": (rules[-1][3] if rules else None), "validator": (rules[-1][3] if rules else None),
            "operators": list(OPERATOR_DIDS),
@@ -663,6 +710,8 @@ def print_text(res):
     print(f"rows {s['rows']}  dup {s['dup']}  unsigned {s['unsigned']}  bad_sig {s['bad_sig']}  frames {s['frames']}  "
           f"offers {s['offers']}  accepts {s['accepts']}  receipts {box['receipts']}")
     print(f"rules {box['rules']}")
+    c = box.get("config") or {}
+    print(f"box {c.get('box')}  config sha256 {str(c.get('sha256'))[:12]}  seats {c.get('values', {}).get('seats')}  graduate_at {c.get('values', {}).get('graduate_at')}  validator_share {c.get('values', {}).get('validator_share')}")
     print(f"PAPER in box {box['paper_total']}  burned {box['burned']}  graduated {box['graduated_paper']}  "
           f"seats {box['seats']['taken']}/{box['seats']['capacity']}  exits {box['exits']}  validator {str(box['validator'])[-4:]}")
     for d, v in out.items():
