@@ -119,6 +119,6 @@
 </g></g>
 <text x="1446.5" y="725" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#d0d0d0">crown</text>
 <text x="1446.5" y="756" font-size="16" font-family="monospace" text-anchor="middle" fill="#7a7a7a">1 / 256</text>
-<text x="800.0" y="870" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#8a8a8a">Looks are derived from the public key. Same DID, same face. Accessories: 1 in 8. Crown: 1 in 256.</text>
-<text x="800.0" y="900" font-size="15" font-family="sans-serif" text-anchor="middle" fill="#555">姿は公開鍵から決まる。同じ DID はいつも同じ顔。飾りは 8 体に 1 体、王冠は 256 体に 1 体。</text>
+<text x="800.0" y="870" font-size="18" font-family="sans-serif" text-anchor="middle" fill="#8a8a8a">Looks are derived from the public key. Same DID, same face. Accessories: 1 in 4. Crown: 1 in 64.</text>
+<text x="800.0" y="900" font-size="15" font-family="sans-serif" text-anchor="middle" fill="#555">姿は公開鍵から決まる。同じ DID はいつも同じ顔。飾りは 4 体に 1 体、王冠は 64 体に 1 体。</text>
 </svg>
