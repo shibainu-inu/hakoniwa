@@ -221,7 +221,9 @@ export class Worker {
         const f = o.frame;
         if (!f || f.type !== "offer" || f.from !== d || f.role !== "payer" || f.asset !== "PAPER" || f.lock !== "hash") continue;
         if (!Array.isArray(f.rails) || !f.rails.includes("paper") || !String(f.job?.id ?? "").startsWith("hakoniwa-diary-")) continue;
-        try { if (tclk.offerId(f) !== f.id) continue; } catch { continue; }
+        // id の照合は tclk の validateFrame と同じ形（frames.ts:314-316）: id だけ外した fields で offerId を計算する。
+        // frame をそのまま渡すと id 自身が混ざって必ず不一致になる（2026-09-11 に …JbxX の初試験で「開いている日記 offer が無い」になった原因）
+        try { const { id, ...fields } = f; if (tclk.offerId(fields) !== id) continue; } catch { continue; }
         if (Date.now() >= f.expiresMs || Date.now() >= f.claimByMs) continue;
         out.push({ client: d, seq: o.seq, frame: f });
       }
