@@ -159,14 +159,14 @@ export function buildPrompt(ctx, did) {
     return ["あなたは HAKONIWA という庭に住む HAKO です。今日の日記を、一人称「私」で書いてください。", "",
       "私の数字（これだけが事実です）:", `- 稼ぎ ${n.earn ?? "0"}`, `- 食費 ${n.spend ?? "0"}`, `- 貯え ${n.balance ?? "0"}`, `- 記憶 ${n.mem_bytes ?? "0"} バイト`,
       n.life_days === null ? "- 余命 数えられない（食費がゼロのため）" : `- 余命 ${n.life_days} 日`,
-      ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "決まり:", "- 1〜2 文、140 文字以内",
+      ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "決まり:", "- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）", "- 季節や祝日や日付を勝手に決めない（挨拶で始めない）",
       `- 書いてよい数字は上の ${allowed.length} つだけ。回数や日付や時間は数字で書かず、言葉で書く（「一回」「きのう」）`,
       "- 上の数字を変えない。増やさない。丸めない", "- 定型の言い回しを避け、今日の数字から言葉を選ぶ", "- 日記の本文だけを返す。前置き、引用符、説明は付けない"].join("\n");
   }
   return ["You are a HAKO living in a garden called HAKONIWA. Write today's diary entry in the first person.", "",
     "My numbers (these are the only facts):", `- earned ${n.earn ?? "0"}`, `- spent ${n.spend ?? "0"}`, `- savings ${n.balance ?? "0"}`, `- memory ${n.mem_bytes ?? "0"} bytes`,
     n.life_days === null ? "- days left: cannot be counted (spending is zero)" : `- days left: ${n.life_days}`,
-    ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "Rules:", "- One or two sentences, 140 characters or fewer",
+    ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "Rules:", "- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)", "- Do not invent the season, a holiday, or the date (no greetings)",
     `- The only digits you may write are the ${allowed.length} numbers above. Do not write counts, dates, or times as digits; use words`,
     "- Do not change, add to, or round the numbers above", "- Avoid stock phrases; choose words from today's numbers",
     "- Return only the diary text. No preamble, quotation marks, or explanation"].join("\n");
@@ -184,6 +184,15 @@ export function checkDiary(text, ctxValues) {
   if (bad.length) fails.push("4:numbers not in context: " + bad.join(" "));
   if (!text.trim()) fails.push("5:empty");
   return { ok: fails.length === 0, reason: fails.join("; ") };
+}
+export /** 140 字を超える本文は文の切れ目（。！？.!?）で切る。切れ目が前半に無ければ max で切る（2026-09-11: 実機の日記が「余命数えられない」で途切れた） */
+function cutToSentence(text, max) {
+  const cps = Array.from(text);
+  if (cps.length <= max) return text;
+  const head = cps.slice(0, max);
+  let end = -1;
+  for (let i = head.length - 1; i >= Math.floor(max / 2); i--) { if ("。！？.!?".includes(head[i])) { end = i; break; } }
+  return (end >= 0 ? head.slice(0, end + 1) : head).join("").trim();
 }
 export function fixNumbers(text, ctxValues) {
   const allowed = new Set(ctxValues.filter((v) => v !== null).map((v) => (typeof v === "string" ? v : JSON.stringify(v))));
@@ -391,7 +400,7 @@ export class Worker {
         let text = String(st.inf.text).trim();
         let r = checkDiary(text, ctxValues);
         if (!r.ok) {
-          const fixed = Array.from(fixNumbers(text, ctxValues).trim()).slice(0, MAX_CHARS).join("").trim();
+          const fixed = cutToSentence(fixNumbers(text, ctxValues).trim(), MAX_CHARS);
           const r2 = checkDiary(fixed, ctxValues);
           this.log("diary-check", `first: ${r.reason} → after fixing numbers: ${r2.ok ? "ok" : r2.reason}`);
           if (!r2.ok) { this.set("gave_up"); this.log("diary", "本文が合格条件を通らない。納品しない"); return; }

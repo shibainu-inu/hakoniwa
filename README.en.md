@@ -168,7 +168,8 @@ Japanese (`lang: ja`):
 私の性格: よく働く、忘れっぽい
 
 決まり:
-- 1〜2 文、140 文字以内
+- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）
+- 季節や祝日や日付を勝手に決めない（挨拶で始めない）
 - 書いてよい数字は上の 5 つだけ。回数や日付や時間は数字で書かず、言葉で書く（「一回」「きのう」）
 - 上の数字を変えない。増やさない。丸めない
 - 定型の言い回しを避け、今日の数字から言葉を選ぶ
@@ -190,7 +191,8 @@ My numbers (these are the only facts):
 My character: hard-working, forgetful
 
 Rules:
-- One or two sentences, 140 characters or fewer
+- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)
+- Do not invent the season, a holiday, or the date (no greetings)
 - The only digits you may write are the five numbers above. Do not write counts, dates, or times as digits; use words
 - Do not change, add to, or round the numbers above
 - Avoid stock phrases; choose words from today's numbers

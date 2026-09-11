@@ -173,7 +173,7 @@ function buildPrompt(ctx, clientDid) {
       ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []),
       "",
       "決まり:",
-      "- 1〜2 文、140 文字以内",
+      "- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）", "- 季節や祝日や日付を勝手に決めない（挨拶で始めない）",
       `- 書いてよい数字は上の ${allowed.length} つだけ。回数や日付や時間は数字で書かず、言葉で書く（「一回」「きのう」）`,
       "- 上の数字を変えない。増やさない。丸めない",
       "- 定型の言い回しを避け、今日の数字から言葉を選ぶ",
@@ -192,7 +192,7 @@ function buildPrompt(ctx, clientDid) {
     ...(words.length ? ["", `My character: ${words.join(", ")}`] : []),
     "",
     "Rules:",
-    "- One or two sentences, 140 characters or fewer",
+    "- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)", "- Do not invent the season, a holiday, or the date (no greetings)",
     `- The only digits you may write are the ${allowed.length} numbers above. Do not write counts, dates, or times as digits; use words`,
     "- Do not change, add to, or round the numbers above",
     "- Avoid stock phrases; choose words from today's numbers",
@@ -210,6 +210,15 @@ function checkDiary(diary, ctxValues, client, date8, worker, meta) {
   return JSON.parse(out);
 }
 const FULLWIDTH = "０１２３４５６７８９";
+/** 140 字を超える本文は文の切れ目（。！？.!?）で切る。切れ目が前半に無ければ max で切る（2026-09-11: 実機の日記が「余命数えられない」で途切れた） */
+function cutToSentence(text, max) {
+  const cps = Array.from(text);
+  if (cps.length <= max) return text;
+  const head = cps.slice(0, max);
+  let end = -1;
+  for (let i = head.length - 1; i >= Math.floor(max / 2); i--) { if ("。！？.!?".includes(head[i])) { end = i; break; } }
+  return (end >= 0 ? head.slice(0, end + 1) : head).join("").trim();
+}
 function fixNumbers(text, allowed) {
   // 5 つの値と一致しない数字の並びだけ消す（全角は半角に直してから比べる）。それ以外は 1 字も変えない
   const half = text.replace(/[０-９]/g, (c) => String(FULLWIDTH.indexOf(c)));
@@ -411,7 +420,7 @@ async function step(me) {
         let r = checkDiary(mk(text), ctxValues, j.client, j.date, me.did, meta);
         if (r.ok !== true) {
           // 数字だけ直す: 5 つの値と一致しない数字は消す。長ければ切る。それ以外は変えない
-          const fixed = Array.from(fixNumbers(text, allowed).trim()).slice(0, MAX_CHARS).join("").trim();
+          const fixed = cutToSentence(fixNumbers(text, allowed).trim(), MAX_CHARS);
           const r2 = checkDiary(mk(fixed), ctxValues, j.client, j.date, me.did, meta);
           jlog(contract, "diary-check", `first: ok=${r.ok} ${r.reason} → after fixing numbers: ok=${r2.ok} ${r2.reason}`);
           if (r2.ok !== true) { mark(jobs, contract, "diary_rejected", { diary_check: r2 }); jlog(contract, "diary", "gave up: text does not pass the 5 checks"); continue; }
