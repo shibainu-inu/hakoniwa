@@ -319,7 +319,8 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         activity[m["from"]].append(parse_ts(m["ts"]))
         if t == "rules":
             if not isinstance(f.get("version"), str) or not isinstance(f.get("sha256"), str): continue
-            rules.append((m["seq"], f["version"], f["sha256"], m["from"], parse_ts(m["ts"])))
+            cs = f.get("config_sha256") if isinstance(f.get("config_sha256"), str) else None   # v0.8: その版で数える hako_box.json の sha256
+            rules.append((m["seq"], f["version"], f["sha256"], m["from"], parse_ts(m["ts"]), cs))
         elif t == "join":
             joins.append((m["seq"], parse_ts(m["ts"]), m["from"]))
             if m["seq"] in uncounted: continue                        # 席が無かった join、退場・卒業のあとの join
@@ -541,7 +542,10 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         }
     stats["join_no_seat"] = len(seat["no_seat"]); stats["join_after_exit"] = len(seat["after_exit"])
     graduated_paper = sum(v["balance"] for v in out.values() if v["state"] == "graduated")
-    box = {"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "config": box_summary(),
+    cfg = box_summary()
+    cfg["rules_config_sha256"] = rules[-1][5] if rules else None                     # 有効な rules 行が指す設定の sha256（v0.8 以降。無ければ None）
+    cfg["match"] = None if cfg["rules_config_sha256"] is None else (cfg["rules_config_sha256"] == cfg["sha256"])   # 読んだファイルと一致するか。False なら数字は疑う
+    box = {"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "config": cfg,
            "rules": [list(r[:3]) for r in rules], "rules_version": (rules[-1][1] if rules else None),
            "rules_did": (rules[-1][3] if rules else None), "validator": (rules[-1][3] if rules else None),
            "operators": list(OPERATOR_DIDS),
@@ -711,7 +715,7 @@ def print_text(res):
           f"offers {s['offers']}  accepts {s['accepts']}  receipts {box['receipts']}")
     print(f"rules {box['rules']}")
     c = box.get("config") or {}
-    print(f"box {c.get('box')}  config sha256 {str(c.get('sha256'))[:12]}  seats {c.get('values', {}).get('seats')}  graduate_at {c.get('values', {}).get('graduate_at')}  validator_share {c.get('values', {}).get('validator_share')}")
+    print(f"box {c.get('box')}  config sha256 {str(c.get('sha256'))[:12]}  rules config {str(c.get('rules_config_sha256'))[:12]} match {c.get('match')}  seats {c.get('values', {}).get('seats')}  graduate_at {c.get('values', {}).get('graduate_at')}  validator_share {c.get('values', {}).get('validator_share')}")
     print(f"PAPER in box {box['paper_total']}  burned {box['burned']}  graduated {box['graduated_paper']}  "
           f"seats {box['seats']['taken']}/{box['seats']['capacity']}  exits {box['exits']}  validator {str(box['validator'])[-4:]}")
     for d, v in out.items():
