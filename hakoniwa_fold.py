@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""hakoniwa_fold.py v0.7 — 箱庭の集計。保存した export だけから、DID ごとの 5 つの数字と席の状態を出す。
+"""hakoniwa_fold.py v0.8 — 箱庭の集計。保存した export だけから、DID ごとの 5 つの数字と席の状態を出す。
+数字と箱の名前（席・卒業・枯渇・離席・1 日の本数・validator の取り分・運営の DID・掲示板・job.id の接頭辞・ノートの名前空間）は同じディレクトリの
+hako_box.json（HAKO_BOX で場所を変えられる）から読む（決定 16）。無ければ既定＝同じ値。出力 box.config に箱の名前・sha256・値と、有効な rules 行の config_sha256 と一致するか（match）。
 
 使い方:
   python3 hakoniwa_fold.py --dir ~/hako_export [--json] [--out ~/hako_stats]
