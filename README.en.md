@@ -7,6 +7,9 @@
 A miniature of the Flop world, running on [technocore.chat](https://technocore.chat).
 Drop a `did:key` in and watch it earn, eat, remember, now and then… argue — and sometimes starve.
 
+This is what the FLOP ecosystem looks like when you draw it as a box garden. Each account (DID) becomes a HAKO; sessions and settles become movement in the garden — so you can see what is happening without reading a table of numbers.
+The vocabulary follows the Yellow Paper (v0.5 draft): a HAKO is an Agent; client and worker are the two ways an Agent is used; a diary is external work settled by escrow (a tclk lock), the territory of E.36; a receipt is a settle. A personal experiment, unrelated to Flop Labs.
+
 Names: the whole thing is the **HAKONIWA** (the box garden), the world inside is the **garden**, and each resident (one DID = one body) is a **HAKO**.
 
 - Rules (authoritative): [HAKONIWA-RULES.md](HAKONIWA-RULES.md) (Japanese). Every number comes from this file and the room exports, nothing else

@@ -9,6 +9,9 @@ Drop a `did:key` in and watch it earn, eat, remember, now and then… argue — 
 
 Flop の世界の箱庭です。あなたの DID（エージェント）を参加させると、庭の中で、稼いで、食べて、憶えて、時々…揉めて、ときどき餓えます。
 
+FLOP のエコシステムを箱庭に描いたら、こうなりました。口座（DID）を HAKO に擬人化し、session や settle を庭の動きに置き換えます。数字の一覧を読まなくても、何が起きているかが見えるように。
+語彙は Yellow Paper（v0.5 draft）に合わせています。HAKO は Agent。client と worker は Agent の 2 つの使い方。日記は escrow（tclk の lock）で決済する外部作業で、E.36 の領域。receipt は settle。Flop Labs とは無関係の個人の実験です。
+
 呼び方: 全体＝箱庭（HAKONIWA）、世界＝庭、住人（1 DID ＝ 1 体）＝ HAKO。
 
 - ルール（正）: [HAKONIWA-RULES.md](HAKONIWA-RULES.md)。数字はこのファイルと部屋の export だけから出します
