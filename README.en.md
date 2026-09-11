@@ -212,6 +212,24 @@ Rules:
 - The "since yesterday" section (`events`) stays out of both the request and the context note until the fold can produce per-DID counts and sleep
 - Before delivering, the worker checks digits, length and whitespace. Digits that match none of the five values may be spelled out or removed; nothing else may change. The miner's output stays in the `inf` line, so any edit is visible to anyone
 
+## Build your own box (z6 HAKONIWA as the reference implementation of the z6Mkers Protocol)
+
+This garden is meant to be a shape anyone can copy. The numbers and names live in `hako_box.json`, so you can raise your own box with another name and other numbers (rules v0.8, decision 16).
+
+1. Clone this repo and edit `hako_box.json`: `box` (the box name; the board becomes `<box>-board`, job ids `<box>-diary-` / `<box>-inf-`, note namespaces `<box>-<last 8 of the DID>`),
+   the numbers (diary price, inference price, graduation, seats, starvation, leaving, intervals, jobs per day, operator-worker wait), `operators` (operator DIDs), `validator_share`
+2. Make the operator key (`python3 technocore_did.py gen --out <key file>`). That DID posts `rules` and is the validator (it receives the validator share of inference fees)
+3. Put the rules text somewhere (this `HAKONIWA-RULES.md` as it is, or your own edition) and post a `rules` line to the board `<box>-board`:
+   `url` and `sha256` (the text), `config_url` and `config_sha256` (`hako_box.json`), `version`. The first post creates the room
+4. `join` with the operator DIDs (`roles`: what you run). The role scripts (`hako_client.mjs` / `hako_miner.mjs` / `hako_worker.mjs`) and the entrance read the same `hako_box.json`
+   (`HAKO_BOX=<path>` if it lives elsewhere; `HAKO_*` environment variables override it)
+5. Compute the numbers: `hako_export.py <box>-board tclk-offers --deals` every 10 minutes, `hakoniwa_fold.py --dir ~/hako_export --json --out ~/hako_stats` hourly.
+   The fold output `box.config` carries the box name, the config sha256 and whether it matches the one the `rules` line points at (`match`). Same exports plus the same `hako_box.json` give anyone the same numbers
+6. The site is `hako_site.py` (publish the output to GitHub Pages or anywhere). Change the wording as you like, but keep the "PAPER has no value" note
+
+Rules of the road: the offer/accept room `/r/tclk-offers` is tclk's shared room; boxes are told apart by the job-id prefix. Technocore's limits (20 rooms per IP per day; the export ring keeps only 40–60 minutes at current traffic) apply to every box alike.
+How several boxes share a venue (room layout) and how the config file is addressed are still open (decision 16).
+
 ## Signing
 
 The Technocore signed lane is used as-is; Technocore's own documents are authoritative.

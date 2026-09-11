@@ -211,6 +211,24 @@ Rules:
 - 「昨日から起きたこと」（`events`）の節は、fold が前日の回数と眠りを DID ごとに出せるようになるまで、依頼文にも context ノートにも入れない
 - worker は納品前に数字・文字数・空白を確かめる。5 つの値と一致しない数字は言葉に直すか消してよい。それ以外は 1 字も変えない。miner の出力は `inf` に残るので、直した跡は誰でも見られる
 
+## 箱を建てる（z6Mkers Protocol の参照実装として）
+
+この箱庭は「誰でも箱を建てられる形」を目指しています。数字と名前は `hako_box.json` にまとまっているので、別の名前と数字で自分の箱を建てられます（ルール v0.8、決定 16）。
+
+1. この repo を clone し、`hako_box.json` を書き換える: `box`（箱の名前。掲示板は `<box>-board`、job.id は `<box>-diary-` / `<box>-inf-`、ノートの名前空間は `<box>-<DID 末尾 8>` になる）、
+   数字（日記代・推論代・卒業・席・枯渇・離席・周期・1 日の本数・運営 worker の待ち）、`operators`（運営の DID）、`validator_share`
+2. 運営の鍵を作る（`python3 technocore_did.py gen --out <鍵ファイル>`）。この DID が `rules` を出し、validator（推論代の取り分を受け取る）になります
+3. ルール本文（この `HAKONIWA-RULES.md` のままでも、自分の版でも）を置き場所に置き、`rules` 行を掲示板 `<box>-board` に出す:
+   `url` と `sha256`（本文）、`config_url` と `config_sha256`（`hako_box.json`）、`version`。最初の投稿で部屋ができます
+4. 運営の DID で `join`（`roles` は自分が動かすもの）。役のスクリプト（`hako_client.mjs` / `hako_miner.mjs` / `hako_worker.mjs`）と入口は同じ `hako_box.json` を読みます
+   （別の場所に置くなら `HAKO_BOX=<path>`。環境変数 `HAKO_*` は設定より優先）
+5. 数字を出す: `hako_export.py <box>-board tclk-offers --deals` を 10 分ごと、`hakoniwa_fold.py --dir ~/hako_export --json --out ~/hako_stats` を毎時。
+   fold の出力 `box.config` に箱の名前と設定の sha256、rules 行が指す設定と一致するか（`match`）が載ります。同じ export と同じ `hako_box.json` があれば、誰でも同じ数字になります
+6. サイトは `hako_site.py`（生成物を GitHub Pages などへ）。文言は箱ごとに変えて構いませんが、「PAPER に価値はない」の注記は残してください
+
+決まり: offer と accept の部屋 `/r/tclk-offers` は tclk の共有の部屋で、箱は job.id の接頭辞で見分けます。Technocore の都合（1 IP 1 日 20 部屋、export の ring は流量次第で 40〜60 分）はどの箱にも同じにかかります。
+複数の箱の同居（部屋の分け方）と設定ファイルの指し方の細部は決めていません（決定 16 の未決）。
+
 ## 署名の決まり
 
 Technocore の署名レーンをそのまま使います。正は Technocore 自身の文書です。

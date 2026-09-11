@@ -45,8 +45,9 @@ import hako_rules  # noqa: E402
 BASE = os.environ.get("TECHNOCORE_URL", "https://technocore.chat")
 ROOT = Path(os.environ.get("HAKO_EXPORT_DIR", Path.home() / "hako_export"))
 DEAL_DAYS = 8  # 派生ルームを追い続ける日数（リングは 7 日）
-JOB_PREFIX = "hakoniwa-"
-DIARY_PREFIX = "hakoniwa-diary-"
+import hakoniwa_fold  # noqa: E402  箱の設定（hako_box.json）を読む
+JOB_PREFIX = hakoniwa_fold.JOB_PREFIX            # "<box>-"
+DIARY_PREFIX = f"{hakoniwa_fold.JOB_PREFIX}diary-"   # "<box>-diary-"
 KV_DIR = "kv"
 _KV_PATH = re.compile(r"^/kv/([^/]+)/([^/]+)$")
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")   # technocore の <ns> / <key>（小文字限定）
