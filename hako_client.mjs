@@ -25,8 +25,10 @@
 //   4. 取引の部屋に worker の diary と reveal が届いたら、worker のノート /kv/hakoniwa-<worker 末尾 8 小文字>/diary-<YYYYMMDD> の 5 値で
 //      hako_rules.py check-diary（条件 2 の for は worker、条件 4 はそのノート）と sha256 を確かめる。合格なら receipt。
 //      不合格なら理由をローカル log に残し、refundAfterMs 後に refund。reveal が無いまま refundAfterMs を過ぎても refund
-//   5. 開いている offer（accept 待ち。export で seq が分かったもの）を自分のノート /kv/hakoniwa-<末尾 8 小文字>/open に 1 行 JSON で置く
-//      {"date","open":[{"seq","frame"}]}。入口 v2（ブラウザの worker）はこれを読んで受ける（/r/tclk-offers の export は重いので）
+//   5. 開いている offer を自分のノート /kv/hakoniwa-<末尾 8 小文字>/open に 1 行 JSON で置く {"date","open":[{"seq","frame"}]}。
+//      入口 v2（ブラウザの worker）はこれを読んで受ける（/r/tclk-offers の export は重いので）。
+//      「開いている」は自分の台帳 state/offers.json（offer ごとに id・出した時刻・期限・lock 済みか）で決める: 今日の offer で、期限内 かつ 未 lock。
+//      export は accept の検出と seq の記入にだけ使う（export は保持された ring で、tclk-offers は 40〜60 分で流れる。2026-09-11 に open が空になった）
 //   6. 1 件ごとに log に 1 行（時刻、契約先頭 16、段階、結果）
 import { mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -73,6 +75,28 @@ function jlog(contract, stage, result) {
 const DAYS_PATH = path.join(STATE_DIR, "days.json");
 const loadDays = () => readJson(DAYS_PATH, {});
 const saveDays = (d) => { if (!DRY_RUN) saveJson(DAYS_PATH, d, 0o600); };
+// ── 台帳 state/offers.json: offer ごと {id, job, date, offered_at, offered_at_ms, expiresMs, claimByMs, seq, frame, locked, locked_at?, contract?} ──
+// days.json（job.id ごとの段）から毎周写す。「開いている」= 今日の offer で 期限内 かつ 未 lock。live の export に見えるかどうかは見ない
+const OFFERS_PATH = path.join(STATE_DIR, "offers.json");
+const LEDGER_KEEP_MS = 2 * 86_400_000;                                      // 期限から 2 日過ぎた行は捨てる
+const loadLedger = () => readJson(OFFERS_PATH, {});
+const saveLedger = (l) => { if (!DRY_RUN) saveJson(OFFERS_PATH, l, 0o600); };
+function ledgerSync(ledger, date8, jobs, seqOf, now) {
+  for (const j of Object.values(jobs)) {
+    const o = j.offer;
+    const e = (ledger[o.id] ??= { id: o.id, job: j.job, date: date8, offered_at: iso(j.offered_at_ms), offered_at_ms: j.offered_at_ms,
+      expiresMs: o.expiresMs, claimByMs: o.claimByMs, seq: j.adopted_seq ?? null, frame: o, locked: false });
+    if (e.seq === null && seqOf.has(o.id)) e.seq = seqOf.get(o.id);
+    const locked = LOCKED_STAGES.includes(j.stage) || j.stage === "gate_closed";   // lock を出した（着地不明・門で断念も含む）
+    if (locked && !e.locked) { e.locked = true; e.locked_at = nowZ(); e.contract = j.contract ?? null; }
+    if (!locked && e.locked) { e.locked = false; delete e.locked_at; delete e.contract; }   // locking → 着地せず offered に戻った
+  }
+  for (const [id, e] of Object.entries(ledger)) if (now - Number(e.expiresMs) > LEDGER_KEEP_MS) delete ledger[id];
+}
+const ledgerOpen = (ledger, date8, now) => Object.values(ledger)
+  .filter((e) => e.date === date8 && !e.locked && now < e.expiresMs)
+  .sort((a, b) => a.offered_at_ms - b.offered_at_ms)
+  .map((e) => ({ seq: e.seq, frame: e.frame }));
 const short = (did) => "…" + String(did).slice(-5);
 const iso = (ms) => (typeof ms === "number" ? new Date(ms).toISOString() : String(ms));
 const today8 = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -216,11 +240,14 @@ async function step(me) {
     catch (e) { jlog(j.contract ?? j.offer.id, "round", `error ${e.message}`); }
   }
 
-  // 5. 開いている offer をノートに（入口 v2 が読む）
+  // 5. 開いている offer を台帳から選んでノートに（入口 v2 が読む）。export は seq を埋めるだけ
   const seqOf = new Map(allFrames.filter((x) => x.frame.type === "offer" && x.from === myDid).map((x) => [x.frame.id, x.seq]));
-  const openNow = Object.values(jobs).filter((j) => j.stage === "offered" && seqOf.has(j.offer.id) && Date.now() < j.offer.expiresMs)
-    .map((j) => ({ seq: seqOf.get(j.offer.id), frame: j.offer }));
+  const ledger = loadLedger();
+  ledgerSync(ledger, date8, jobs, seqOf, Date.now());
+  saveLedger(ledger);
+  const openNow = ledgerOpen(ledger, date8, Date.now());
   const openValue = JSON.stringify({ date: date8, open: openNow });
+  if (DRY_RUN) log("", `dry-run: 台帳 ${Object.keys(ledger).length} 件、開いている offer ${openNow.length} 件 [${openNow.map((o) => `${o.frame.job.id}${o.seq === null ? "" : ` seq ${o.seq}`}`).join(", ")}]`);
   if (!DRY_RUN && openValue !== day.open_note) {
     const ns = `hakoniwa-${myDid.slice(-8).toLowerCase()}`;
     try { if (await notes.set(ns, "open", openValue)) { day.open_note = openValue; saveDays(days); jlog("-", "open-note", `ok ${openNow.length} open offer(s)`); } }

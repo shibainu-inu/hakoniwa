@@ -151,6 +151,20 @@ def load_dir(root):
                 out.append((d.name, gen, m))
     return out
 
+def load_gaps(root):
+    """→ [{"room","from_seq","to_seq","at"}]。hako_export.py が <room>/gaps.jsonl に残した取りこぼし（無ければ空）。
+    box.export_gaps にそのまま写す。数字の補正はしない（取れなかった行は数えられない、と分かるようにするだけ）"""
+    root = Path(root).expanduser()
+    out = []
+    for p in sorted(root.glob("*/gaps.jsonl")):
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if not line.strip(): continue
+            try: g = json.loads(line)
+            except json.JSONDecodeError: continue
+            if isinstance(g, dict) and {"room", "from_seq", "to_seq", "at"} <= set(g):
+                out.append({k: g[k] for k in ("room", "from_seq", "to_seq", "at")})
+    return out
+
 def load_kv(root):
     """<root>/kv/<ns>/<key>/<時刻>.json → {"/kv/<ns>/<key>": [(時刻, 本文), ...]}（時刻順）"""
     kv = {}
@@ -201,8 +215,8 @@ def context_values(kv, path):
 
 # ── 集計 ──────────────────────────────────────────────────────────────
 
-def fold(entries, now=None, kv=None):
-    """entries: [(room, generation, row)]、kv: load_kv の戻り値 → {"box": ..., "did": ...}
+def fold(entries, now=None, kv=None, gaps=None):
+    """entries: [(room, generation, row)]、kv: load_kv の戻り値、gaps: load_gaps の戻り値（box.export_gaps に写すだけ） → {"box": ..., "did": ...}
 
     署名の検証は 1 回。席（SEATS）に入れなかった join と退場後の join は数えないので、その集合が変わらなくなるまで畳み直す
     （数えない join の DID の取引は数えず、それが誰かの貯えと退場に響きうるため。普通は 1〜2 回で止まる）"""
@@ -229,6 +243,7 @@ def fold(entries, now=None, kv=None):
         if res["_uncounted"] == uncounted: break
         uncounted = res["_uncounted"]
     res.pop("_uncounted")
+    res["box"]["export_gaps"] = list(gaps or [])   # hako_export.py の取りこぼし（<room>/gaps.jsonl）。写すだけで数字は補正しない
     return res
 
 
@@ -495,7 +510,8 @@ def _fold_core(by_room, stats, now, kv, uncounted):
            "deals": {c: d for c, d in deals.items() if not d["test"]},
            "test_contracts": {c: d for c, d in deals.items() if d["test"]},
            "contracts_unlocked": unlocked,
-           "serves": serves, "issues": issues, "invalid_issue": invalid_issue}
+           "serves": serves, "issues": issues, "invalid_issue": invalid_issue,
+           "export_gaps": []}
     return {"box": box, "did": out, "_uncounted": {j["seq"] for j in seat["no_seat"] + seat["after_exit"]}}
 
 
@@ -658,6 +674,8 @@ def print_text(res):
         print(f"deal {cid[:18]} {d['kind']:5} {d['amount']:>5} {d['status']:9} {d['job']}")
     for i in box["issues"]:
         print(f"issue seq {i['seq']} {i['date']} to {str(i['to'])[-4:]} pool {i['pool']}: {i['status']}")
+    for g in box.get("export_gaps", []):
+        print(f"export gap {g['room']} {g['from_seq']}-{g['to_seq']} at {g['at']}")
 
 def write_out(res, out_dir):
     out_dir = Path(out_dir).expanduser(); out_dir.mkdir(parents=True, exist_ok=True)
@@ -685,7 +703,7 @@ def main(argv):
         print(__doc__); return 2
     entries = load_dir(dir_) if dir_ else []
     entries += load_files(paths, rooms)
-    res = fold(entries, kv=load_kv(dir_) if dir_ else None)
+    res = fold(entries, kv=load_kv(dir_) if dir_ else None, gaps=load_gaps(dir_) if dir_ else None)
     if out_dir: write_out(res, out_dir)
     if as_json: print(json.dumps(res, ensure_ascii=False, indent=1))
     else: print_text(res)

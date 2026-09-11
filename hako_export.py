@@ -16,10 +16,15 @@
   ~/hako_export/<room>/g<世代>_<YYYYMMDDTHHMMSSZ>.jsonl   今回新しく見えた行だけ（バイト列そのまま）。
                                                  世代はヘッダの X-Room-Generation（無ければ cursor の値、それも無ければ 0）
   ~/hako_export/<room>/cursor.json               {"generation": g, "last_seq": n, "updated": ts}
+  ~/hako_export/<room>/gaps.jsonl                取りこぼし 1 件 1 行 {"room","from_seq","to_seq","at"}（hakoniwa_fold.py が box.export_gaps に写す。数字の補正はしない）
   ~/hako_export/deals.json                       契約 id → 派生ルーム（tclk-offers の accept から）
   ~/hako_export/kv/<ns>/<key>/<YYYYMMDDTHHMMSSZ>.json   context ノートの写し（本文そのまま。前の写しと同じなら書かない）
   ~/hako_export/log                              1 回 1 行
 
+取りこぼし（2026-09-11 に分かったこと）: /export は「保持されている ring」（app.py room_export、store.py MAX_ROOM_BYTES 10 MiB → 圧縮後 5 MiB）で、
+tclk-offers は他のエージェントの流量で 40〜60 分ぶんしか残らない。前回の cursor の last_seq + 1 より ring の先頭 seq が大きければ、
+その間の行はもう取れない。世代が同じで last_seq > 0 のときだけ見て、log に `<room> gap <from_seq>-<to_seq> at <時刻>` を出し、
+<room>/gaps.jsonl に同じ 4 項目を追記する（cron の周期は 10 分。30 分では 8,465 行/30 分の流量に対し余裕が無かった）。
 世代が変わったら cursor を捨てて、その部屋を新しい世代として扱う（古い行はファイルに残る。
 hakoniwa_fold.py はファイル名の g<N>_ で世代を見分け、同じ (部屋, 世代, seq) を 1 回だけ数える）。
 派生ルームは、tclk-offers に保存した offer/accept のうち job.id が hakoniwa- で始まるものから、
@@ -89,8 +94,34 @@ def write_cursor(room, cur):
     (ROOT / room / "cursor.json").write_text(json.dumps(cur), encoding="utf-8")
 
 
+def find_gap(cur, gen, seqs):
+    """取りこぼしの検知。cur は前回の cursor、gen は今回の世代、seqs は ring にある seq の列。
+    世代が同じ（どちらかが不明なら同じとみなす）で前回 last_seq > 0 のとき、ring の先頭 seq が last_seq + 1 より大きければ
+    (last_seq + 1, 先頭 - 1) を返す。それ以外は None。数字の補正はしない（fold は無い行を数えられない）。"""
+    if not seqs or not cur.get("last_seq"):
+        return None
+    if cur.get("generation") is not None and gen is not None and gen != cur["generation"]:
+        return None
+    first = min(seqs)
+    if first > cur["last_seq"] + 1:
+        return (cur["last_seq"] + 1, first - 1)
+    return None
+
+
+def record_gap(room, gap, at=None):
+    """log に 1 行、<room>/gaps.jsonl に 1 行（room, from_seq, to_seq, at）。"""
+    at = at or stamp()
+    rec = {"room": room, "from_seq": gap[0], "to_seq": gap[1], "at": at}
+    d = ROOT / room
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / "gaps.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+    log(f"{room} gap {gap[0]}-{gap[1]} at {at}")
+    return rec
+
+
 def save_room(room):
-    """1 部屋ぶん取って、新しい行だけを保存。戻り値は保存した行数。"""
+    """1 部屋ぶん取って、新しい行だけを保存。戻り値は保存した行数。取りこぼしがあれば log と gaps.jsonl に残す。"""
     try:
         gen, raw = fetch_export(room)
     except urllib.error.HTTPError as e:
@@ -103,7 +134,7 @@ def save_room(room):
     if cur["generation"] is not None and gen is not None and gen != cur["generation"]:
         log(f"{room} generation {cur['generation']} -> {gen}: cursor reset")
         cur = {"generation": gen, "last_seq": 0, "updated": None}
-    new_lines, last_seq, seen = [], cur["last_seq"], 0
+    new_lines, last_seq, seen, seqs = [], cur["last_seq"], 0, []
     for line in raw.split(b"\n"):
         if not line.strip():
             continue
@@ -112,9 +143,13 @@ def save_room(room):
             seq = json.loads(line)["seq"]
         except (ValueError, KeyError, TypeError):
             continue
+        seqs.append(seq)
         if seq > cur["last_seq"]:
             new_lines.append(line)
             last_seq = max(last_seq, seq)
+    gap = find_gap(cur, gen, seqs)
+    if gap:
+        record_gap(room, gap)
     gen_out = gen if gen is not None else (cur["generation"] or 0)
     if new_lines:
         d = ROOT / room
