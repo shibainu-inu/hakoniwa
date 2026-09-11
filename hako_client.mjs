@@ -36,26 +36,27 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchJoins, hasRole } from "./hako_board.mjs";
+import { BOX, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport,
   readJson, saveJson, decodeAll, indexAccepts, sha256Utf8, contextPath,
 } from "./hako_common.mjs";
 
 const {
-  OFFER_ROOM, PaperRail, applyFrame, contractId, dealRoom, lockTerms, makeOffer, openContract, stateNote, stateNoteValue, tryDecodeFrame,
+  PaperRail, applyFrame, contractId, dealRoom, lockTerms, makeOffer, openContract, stateNote, stateNoteValue, tryDecodeFrame,
 } = core;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const KEY_PATH = process.env.KEY_PATH ?? path.join(homedir(), "did_key.json");
 const STATS = process.env.HAKO_STATS ?? path.join(homedir(), "hako_stats", "latest.json");
-const PRICE = String(process.env.HAKO_DIARY_PRICE ?? "400");
+const PRICE = String(process.env.HAKO_DIARY_PRICE ?? BOX.diary_price);          // 数字と名前の既定は hako_box.json（決定 16）。env で上書き
 const EXPIRES_MIN = Number(process.env.HAKO_CLIENT_EXPIRES_MIN ?? 360);
 const CLAIMBY_MIN = Number(process.env.HAKO_CLIENT_CLAIMBY_MIN ?? 720);
 const REFUND_MIN = Number(process.env.HAKO_CLIENT_REFUND_MIN ?? 1440);
-const INTERVAL_SEC = Number(process.env.HAKO_CLIENT_INTERVAL_SEC ?? 300);
-const MAX_PER_DAY = Number(process.env.HAKO_CLIENT_MAX_PER_DAY ?? 20);
+const INTERVAL_SEC = Number(process.env.HAKO_CLIENT_INTERVAL_SEC ?? BOX.client_interval_sec);
+const MAX_PER_DAY = Number(process.env.HAKO_CLIENT_MAX_PER_DAY ?? BOX.client_max_per_day);
 const MAX_OPEN = Number(process.env.HAKO_CLIENT_MAX_OPEN ?? 5);
-const OPERATOR_WAIT_MIN = Number(process.env.HAKO_CLIENT_OPERATOR_WAIT_MIN ?? 30);
+const OPERATOR_WAIT_MIN = Number(process.env.HAKO_CLIENT_OPERATOR_WAIT_MIN ?? BOX.operator_wait_min);
 const STATE_DIR = process.env.HAKO_CLIENT_STATE ?? path.join(homedir(), ".hako_client");
 const LOG_PATH = process.env.HAKO_CLIENT_LOG ?? path.join(homedir(), "hako_client.log");
 const RULES_PY = process.env.HAKO_RULES_PY ?? path.join(HERE, "hako_rules.py");
@@ -100,7 +101,7 @@ const ledgerOpen = (ledger, date8, now) => Object.values(ledger)
 const short = (did) => "…" + String(did).slice(-5);
 const iso = (ms) => (typeof ms === "number" ? new Date(ms).toISOString() : String(ms));
 const today8 = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
-const jobPrefixFor = (did, date8) => `hakoniwa-diary-${did.slice(-4)}${TEST ? "-test" : ""}-${date8}-`;
+const jobPrefixFor = (did, date8) => `${jobPrefix("diary")}${did.slice(-4)}${TEST ? "-test" : ""}-${date8}-`;
 
 // ── fold の出力: 席の状態と運営 DID ──
 function readStats() {
@@ -249,7 +250,7 @@ async function step(me) {
   const openValue = JSON.stringify({ date: date8, open: openNow });
   if (DRY_RUN) log("", `dry-run: 台帳 ${Object.keys(ledger).length} 件、開いている offer ${openNow.length} 件 [${openNow.map((o) => `${o.frame.job.id}${o.seq === null ? "" : ` seq ${o.seq}`}`).join(", ")}]`);
   if (!DRY_RUN && openValue !== day.open_note) {
-    const ns = `hakoniwa-${myDid.slice(-8).toLowerCase()}`;
+    const ns = noteNs(myDid);
     try { if (await notes.set(ns, "open", openValue)) { day.open_note = openValue; saveDays(days); jlog("-", "open-note", `ok ${openNow.length} open offer(s)`); } }
     catch (e) { jlog("-", "open-note", `fail ${e.message}`); }
   }

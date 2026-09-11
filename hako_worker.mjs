@@ -38,23 +38,24 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchJoins, hasRole, parseJoins, parseExportLines as parseBoardLines } from "./hako_board.mjs";
+import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport, GateClosed,
   readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, contextPath,
 } from "./hako_common.mjs";
 
 const {
-  OFFER_ROOM, PaperRail, applyFrame, canonicalJson, contractId, dealRoom, encodeFrame, generateHashLock,
+  PaperRail, applyFrame, canonicalJson, contractId, dealRoom, encodeFrame, generateHashLock,
   lockTerms, makeOffer, openContract, stateNote, stateNoteValue, tryDecodeFrame,
 } = core;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const KEY_PATH = process.env.KEY_PATH ?? path.join(homedir(), "did_miner.json");
 const STATS = process.env.HAKO_STATS ?? path.join(homedir(), "hako_stats", "latest.json");
-const INTERVAL_SEC = Number(process.env.HAKO_WORKER_INTERVAL_SEC ?? 600);
+const INTERVAL_SEC = Number(process.env.HAKO_WORKER_INTERVAL_SEC ?? BOX.worker_interval_sec);   // 数字と名前の既定は hako_box.json（決定 16）。env で上書き
 const MIN_AMOUNT = Number(process.env.HAKO_WORKER_MIN ?? 0);
 const MAX_PER_ROUND = Number(process.env.HAKO_WORKER_MAX_PER_ROUND ?? 1);
-const INF_PRICE = String(process.env.HAKO_WORKER_INF_PRICE ?? "240");
+const INF_PRICE = String(process.env.HAKO_WORKER_INF_PRICE ?? BOX.inference_price);
 const INF_EXPIRES_MIN = Number(process.env.HAKO_WORKER_INF_EXPIRES_MIN ?? 120);
 const INF_CLAIMBY_MIN = Number(process.env.HAKO_WORKER_INF_CLAIMBY_MIN ?? 240);
 const INF_REFUND_MIN = Number(process.env.HAKO_WORKER_INF_REFUND_MIN ?? 360);
@@ -62,7 +63,7 @@ const INF_RETRIES = Number(process.env.HAKO_WORKER_INF_RETRIES ?? 2);
 const STATE_DIR = process.env.HAKO_WORKER_STATE ?? path.join(homedir(), ".hako_worker");
 const LOG_PATH = process.env.HAKO_WORKER_LOG ?? path.join(homedir(), "hako_worker.log");
 const RULES_PY = process.env.HAKO_RULES_PY ?? path.join(HERE, "hako_rules.py");
-const JOB_PREFIX = "hakoniwa-diary-";
+const JOB_PREFIX = jobPrefix("diary");
 const MAX_CHARS = 140;
 const argv = process.argv.slice(2);
 const DRY_RUN = argv.includes("--dry-run");
@@ -325,7 +326,7 @@ async function step(me) {
           from: me.did, role: "payer", lock: "hash", amount: INF_PRICE, asset: "PAPER", rails: ["paper"],
           expiresMs: Math.min(cap(INF_EXPIRES_MIN), claimBy - 60_000), claimByMs: claimBy, refundAfterMs: Math.max(claimBy + 60_000, cap(INF_REFUND_MIN)),
           // 試験の日記（job.id に -test-）から出す推論 offer にも -test- を伝える（fold は -test- を含む契約を本番の数字に入れない）
-          job: { proto: "hakoniwa", id: `hakoniwa-inf-${contract.slice(2, 10)}${j.job.includes("-test-") ? "-test" : ""}-${n}`, context: notePath },
+          job: { proto: "hakoniwa", id: `${jobPrefix("inf")}${contract.slice(2, 10)}${j.job.includes("-test-") ? "-test" : ""}-${n}`, context: notePath },
         });
         mark(jobs, contract, "inf_offering", { inf_tries: n, ctx, inf: { offer: infOffer, note: notePath, job: infOffer.job.id } });
         await post(me, OFFER_ROOM, infOffer, { gateUntilMs: j.claimByMs, onGateWait: (k) => jlog(contract, "inf-offer", `gate busy, retry ${k}`) });
@@ -468,7 +469,7 @@ if (DRY_RUN) {
   let myDid = null;
   if (process.env.TC_PASS) { try { myDid = loadSigner(KEY_PATH, process.env.TC_PASS).did; } catch { myDid = null; } }
   const target = EXPORT_ARG ?? path.join(homedir(), "hako_export", OFFER_ROOM);
-  const boardDir = BOARD_ARG ?? path.join(homedir(), "hako_export", "hakoniwa-board");
+  const boardDir = BOARD_ARG ?? path.join(homedir(), "hako_export", BOARD_ROOM);
   const exp = readSavedExport(target);
   let board = { joined: new Map(), stats: { bad_sig: 0 } };
   try { board = parseJoins(readSavedExport(boardDir).rows); } catch { log("", `  board ${boardDir} が読めない: join 済み DID は 0 として判定`); }

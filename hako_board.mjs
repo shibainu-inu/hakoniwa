@@ -9,8 +9,9 @@
 //   - hakoniwa/0 {"t":"join", "roles": [...]} の行。roles は最後の join。無いか空なら worker と client
 //   - 同じ (generation, seq) は 1 回だけ。generation は X-Room-Generation（ここでは 1 回の export なので seq の重複だけ落とす）
 import { createPublicKey, verify as cryptoVerify } from "node:crypto";
+import { BOARD_ROOM } from "./hako_box.mjs";
 
-export const BOARD_ROOM = "hakoniwa-board";
+export { BOARD_ROOM };                      // 掲示板の部屋名は hako_box.json（既定 hakoniwa-board）
 export const DEFAULT_ROLES = ["worker", "client"];
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");   // DER の SPKI 前置き（Ed25519、鍵 32 バイト）

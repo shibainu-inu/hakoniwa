@@ -11,10 +11,19 @@
 import * as tclk from "./hako_tclk.js";
 
 export const VENUE = "https://technocore.chat";
-const BOARD = "hakoniwa-board";
-const OFFERS = "tclk-offers";
+// 箱の設定（決定 16 ②）: 既定は hakoniwa。サイトの latest.json の box.config（hako_box.json の写し）で上書きする（applyBox）
+export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240" };
+export function applyBox(cfg) {
+  if (!cfg || typeof cfg !== "object") return box;
+  if (typeof cfg.box === "string" && cfg.box) box.name = cfg.box;
+  box.board = typeof cfg.board === "string" && cfg.board ? cfg.board : `${box.name}-board`;
+  const v = cfg.values || {};
+  if (typeof v.offers_room === "string" && v.offers_room) box.offers = v.offers_room;
+  if (v.inference_price !== undefined && v.inference_price !== null) box.inference_price = String(v.inference_price);
+  return box;
+}
 const STATE_KEY = "hako_work_v1";
-const INF_PRICE = "240";                       // ルール v0.7: 運営の miner は 240 以上なら受ける
+// 推論代は box.inference_price（ルール v0.7: 運営の miner は 240 以上なら受ける）
 const INF_EXPIRES_MIN = 120, INF_CLAIMBY_MIN = 240, INF_REFUND_MIN = 360;
 const INF_RETRIES = 2;
 const LOCK_WAIT_MIN = 20;                      // client の lock を待つ上限（client は 5 分周期。運営 worker を待たせる 30 分より短くてよい: 参加者が先）
@@ -49,7 +58,8 @@ export function pubOfDid(did) {
 export async function sha256Hex(s) { return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s)))); }
 const toAscii = (s) => s.replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
-export const contextPath = (did, kind, suffix) => `/kv/hakoniwa-${String(did).slice(-8).toLowerCase()}/${kind}-${suffix}`;
+export const noteNs = (did) => `${box.name}-${String(did).slice(-8).toLowerCase()}`;
+export const contextPath = (did, kind, suffix) => `/kv/${noteNs(did)}/${kind}-${suffix}`;
 const short = (d) => "…" + String(d).slice(-5);
 const iso = (ms) => new Date(ms).toISOString();
 const nowZ = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -101,13 +111,13 @@ export const notes = {
   },
 };
 export async function fetchJoins() {
-  const r = await fetch(`${VENUE}/r/${BOARD}/export`);
-  if (!r.ok) throw new Error(`export ${BOARD}: ${r.status}`);
+  const r = await fetch(`${VENUE}/r/${box.board}/export`);
+  if (!r.ok) throw new Error(`export ${box.board}: ${r.status}`);
   const joined = new Map();
   const rows = [];
   for (const line of (await r.text()).split("\n")) { if (!line.trim()) continue; try { const m = JSON.parse(line); if (m && typeof m.seq === "number") rows.push(m); } catch { /* skip */ } }
   for (const m of rows.sort((a, b) => a.seq - b.seq)) {
-    if (!(await verifyRow(BOARD, m))) continue;
+    if (!(await verifyRow(box.board, m))) continue;
     const t = String(m.text).trim();
     if (!t.startsWith("hakoniwa/0 ")) continue;
     let f; try { f = JSON.parse(t.slice(11)); } catch { continue; }
@@ -223,13 +233,13 @@ export class Worker {
     const ops = Array.isArray(stats?.box?.operators) ? stats.box.operators : [];
     const out = [];
     for (const d of ops) {
-      const raw = await notes.get(`hakoniwa-${d.slice(-8).toLowerCase()}`, "open").catch(() => null);
+      const raw = await notes.get(noteNs(d), "open").catch(() => null);
       if (!raw) continue;
       let v; try { v = JSON.parse(raw); } catch { continue; }
       for (const o of v?.open ?? []) {
         const f = o.frame;
         if (!f || f.type !== "offer" || f.from !== d || f.role !== "payer" || f.asset !== "PAPER" || f.lock !== "hash") continue;
-        if (!Array.isArray(f.rails) || !f.rails.includes("paper") || !String(f.job?.id ?? "").startsWith("hakoniwa-diary-")) continue;
+        if (!Array.isArray(f.rails) || !f.rails.includes("paper") || !String(f.job?.id ?? "").startsWith(`${box.name}-diary-`)) continue;
         // id の照合は tclk の validateFrame と同じ形（frames.ts:314-316）: id だけ外した fields で offerId を計算する。
         // frame をそのまま渡すと id 自身が混ざって必ず不一致になる（2026-09-11 に …JbxX の初試験で「開いている日記 offer が無い」になった原因）
         try { const { id, ...fields } = f; if (tclk.offerId(fields) !== id) continue; } catch { continue; }
@@ -250,6 +260,7 @@ export class Worker {
       if (st.stage === "idle" || st.stage === "no_lock") {
         // 2〜3. 開いている offer を 1 つ受ける（自分の数字のノートを先に置く）
         const stats = await this.stats();
+        applyBox(stats?.box?.config);
         const joined = await fetchJoins();
         if (!joined.has(me)) { this.log("join", "この DID は掲示板に join していない"); return; }
         if ((stats?.did?.[me]?.state ?? "seated") !== "seated") { this.log("seat", `席にいない (${stats.did[me].state})`); this.set("gave_up"); return; }
@@ -274,7 +285,7 @@ export class Worker {
         this.set("accepting", { offer: pick.frame, client: pick.client, job: pick.frame.job.id, ctx: note, note: notePath, accept, accept_text: text,
           contract: accept.contract, room: tclk.dealRoom(accept.contract), preimage: hl.preimage, statement: hl.hash, accepted_at_ms: Date.now(),
           claimByMs: pick.frame.claimByMs, refundAfterMs: pick.frame.refundAfterMs, tried: [...tried, pick.frame.id], inf: null });
-        await this.me.post(OFFERS, text, { gateUntilMs: pick.frame.claimByMs, onWait: (n) => this.log("accept", `gate busy, retry ${n}`) });
+        await this.me.post(box.offers, text, { gateUntilMs: pick.frame.claimByMs, onWait: (n) => this.log("accept", `gate busy, retry ${n}`) });
         this.set("accepted");
         this.log("accept", `ok ${st.job} amount=${pick.frame.amount} client=${short(pick.client)} contract ${st.contract.slice(0, 18)}`);
         return;
@@ -306,14 +317,14 @@ export class Worker {
         const t = Date.now();
         const cap = (min) => Math.min(t + min * 60_000, st.claimByMs);
         const claimBy = cap(INF_CLAIMBY_MIN);
-        const infOffer = tclk.makeOffer({ from: me, role: "payer", lock: "hash", amount: INF_PRICE, asset: "PAPER", rails: ["paper"],
+        const infOffer = tclk.makeOffer({ from: me, role: "payer", lock: "hash", amount: box.inference_price, asset: "PAPER", rails: ["paper"],
           expiresMs: Math.min(cap(INF_EXPIRES_MIN), claimBy - 60_000), claimByMs: claimBy, refundAfterMs: Math.max(claimBy + 60_000, cap(INF_REFUND_MIN)),
-          job: { proto: "hakoniwa", id: `hakoniwa-inf-${st.contract.slice(2, 10)}${st.job.includes("-test-") ? "-test" : ""}-${n}`, context: notePath } });
+          job: { proto: "hakoniwa", id: `${box.name}-inf-${st.contract.slice(2, 10)}${st.job.includes("-test-") ? "-test" : ""}-${n}`, context: notePath } });
         this.set("inf_offering", { inf_tries: n, inf: { offer: infOffer, note: notePath, job: infOffer.job.id } });
-        const posted = await this.me.post(OFFERS, tclk.encodeFrame(infOffer), { gateUntilMs: st.claimByMs, onWait: (k) => this.log("inf-offer", `gate busy, retry ${k}`) });
+        const posted = await this.me.post(box.offers, tclk.encodeFrame(infOffer), { gateUntilMs: st.claimByMs, onWait: (k) => this.log("inf-offer", `gate busy, retry ${k}`) });
         this.cursor = posted?.seq ?? null;
         this.set("inf_offered", { inf: { ...st.inf, seq: posted?.seq ?? null } });
-        this.log("inf-offer", `ok ${infOffer.job.id} amount=${INF_PRICE} expires=${iso(infOffer.expiresMs)}`);
+        this.log("inf-offer", `ok ${infOffer.job.id} amount=${box.inference_price} expires=${iso(infOffer.expiresMs)}`);
         return;
       }
       if (st.stage === "inf_offering") { this.set("locked"); return; }   // 着地不明: 通し番号を進めて出し直す
@@ -321,7 +332,7 @@ export class Worker {
         // 6. miner の accept（join 済み・miner 役・自分以外・contract 一致・seq 最初）を lock
         const infOffer = st.inf.offer;
         const since = this.cursor ?? st.inf.seq ?? 0;
-        const { messages } = await readSince(OFFERS, Math.max(0, since - 1));
+        const { messages } = await readSince(box.offers, Math.max(0, since - 1));
         if (messages.length >= 200) this.log("inf-accept", "差分が 200 件を超えた（取りこぼしの可能性）");
         const accs = [];
         for (const m of messages) {

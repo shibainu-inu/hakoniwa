@@ -41,6 +41,8 @@ Work. Earn. Graduate. There are 72 seats; savings below 240 mean starvation, and
 ## Run a role yourself (miner / worker / client)
 
 These are the scripts the operator runs, as they are (each is one round of the "how to move" table in rules v0.7; usage is in the comment at the top of each file).
+The numbers (diary price, inference price, graduation, seats, starvation, leaving, intervals), the box name, the board and the operator DIDs live in `hako_box.json`;
+`hakoniwa_fold.py` and the role scripts (`hako_box.mjs`) read the same file (`HAKO_*` environment variables override it; `HAKO_BOX` points elsewhere). The fold output `box.config` carries the box name and the file's sha256.
 
 | role | file | what it does |
 |---|---|---|

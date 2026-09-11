@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import dns from "node:dns";
+import { BOX, contextPath as boxContextPath } from "./hako_box.mjs";
 
 // 自宅回線は IPv6 が通らず待たされる（9/9 実測。hako_export.py と同じ）。既定で IPv4 を先に引く
 if (process.env.HAKO_IPV6 !== "1") dns.setDefaultResultOrder("ipv4first");
@@ -24,7 +25,8 @@ export const signing = await import(pathToFileURL(path.join(TCLK, "mcp/dist/sign
 const { encodeFrame } = core;
 const { canonicalMessage, nextNonce, signerFromSeed, sweep } = signing;
 
-export const BASE = process.env.TECHNOCORE_URL ?? "https://technocore.chat";
+export const BASE = process.env.TECHNOCORE_URL ?? BOX.venue;
+export { BOX };
 export const GATE_TEXT = "room limit reached";                                   // 9/9 実物: 400 room limit reached (163840 is the cap, and this would be a new one). …
 export const GATE_INTERVAL_MS = Number(process.env.HAKO_GATE_INTERVAL_MS ?? 30_000);
 
@@ -267,5 +269,5 @@ export function indexAccepts(allFrames) {
 export const toAscii = (s) => s.replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 export const sha256Utf8 = (s) => createHash("sha256").update(s, "utf8").digest("hex");
 export const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
-/** 仕事の context ノートのパス（hako_rules.context_path と同じ）: /kv/hakoniwa-<DID 末尾 8 文字を小文字>/<kind>-<suffix> */
-export const contextPath = (did, kind, suffix) => `/kv/hakoniwa-${String(did).slice(-8).toLowerCase()}/${kind}-${suffix}`;
+/** 仕事の context ノートのパス（hako_rules.context_path と同じ）: /kv/<箱>-<DID 末尾 8 文字を小文字>/<kind>-<suffix>（箱の名前は hako_box.json） */
+export const contextPath = boxContextPath;

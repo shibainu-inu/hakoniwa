@@ -33,21 +33,22 @@ import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fetchJoins, parseJoins, parseExportLines as parseBoardLines } from "./hako_board.mjs";
+import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix } from "./hako_box.mjs";
 import { core, BASE, log, sleep, nowZ, setLogFile, loadSigner, req, readTail, post, notes, refusal, fetchExport } from "./hako_common.mjs";
 
 const {
-  OFFER_ROOM, PaperRail, applyFrame, canonicalJson, contractId, dealRoom, encodeFrame, generateHashLock,
+  PaperRail, applyFrame, canonicalJson, contractId, dealRoom, encodeFrame, generateHashLock,
   lockTerms, openContract, stateNote, stateNoteValue, tryDecodeFrame,
 } = core;
 
 const KEY_PATH = process.env.KEY_PATH ?? path.join(homedir(), "did_miner.json");
-const INTERVAL_SEC = Number(process.env.HAKO_MINER_INTERVAL_SEC ?? 300);
-const MIN_AMOUNT = Number(process.env.HAKO_MINER_MIN ?? 240);
+const INTERVAL_SEC = Number(process.env.HAKO_MINER_INTERVAL_SEC ?? BOX.miner_interval_sec);   // 数字と名前の既定は hako_box.json（決定 16）。env で上書き
+const MIN_AMOUNT = Number(process.env.HAKO_MINER_MIN ?? BOX.inference_min);
 const MODEL = process.env.HAKO_OLLAMA_MODEL ?? "qwen2.5:1.5b";
 const OLLAMA = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const STATE_DIR = process.env.HAKO_MINER_STATE ?? path.join(homedir(), ".hako_miner");
 const LOG_PATH = process.env.HAKO_MINER_LOG ?? path.join(homedir(), "hako_miner.log");
-const JOB_PREFIX = "hakoniwa-inf-";
+const JOB_PREFIX = jobPrefix("inf");
 const MAX_CHARS = 140;               // HAKONIWA-RULES「行の形」: text は 140 字以内
 const argv = process.argv.slice(2);
 const DRY_RUN = argv.includes("--dry-run");
@@ -351,7 +352,7 @@ if (DRY_RUN || EXPLAIN) {
   if (EXPLAIN) {
     // --explain <offer id の先頭>: いまの /r/tclk-offers/export（--export があればそのファイル）からその offer を取り、条件を 1 つずつ当てる
     const exp = EXPORT_ARG ? readSavedExport(EXPORT_ARG) : await fetchOffersExport();
-    const board = EXPORT_ARG ? readSavedBoard(BOARD_ARG ?? path.join(homedir(), "hako_export", "hakoniwa-board")) : await fetchJoins(BASE, req);
+    const board = EXPORT_ARG ? readSavedBoard(BOARD_ARG ?? path.join(homedir(), "hako_export", BOARD_ROOM)) : await fetchJoins(BASE, req);
     const allFrames = decodeAll(exp.rows);
     const hits = allFrames.filter((x) => x.frame.type === "offer" && String(x.frame.id).startsWith(EXPLAIN));
     log("", `explain  ${EXPORT_ARG ?? `${BASE}/r/${OFFER_ROOM}/export`}  gen ${exp.generation}  rows ${exp.rows.length}  matching offers ${hits.length}`);
@@ -371,7 +372,7 @@ if (DRY_RUN || EXPLAIN) {
   }
   const target = EXPORT_ARG ?? path.join(homedir(), "hako_export", OFFER_ROOM);
   const exp = readSavedExport(target);
-  const boardDir = BOARD_ARG ?? path.join(homedir(), "hako_export", "hakoniwa-board");
+  const boardDir = BOARD_ARG ?? path.join(homedir(), "hako_export", BOARD_ROOM);
   let board = { joined: new Map(), stats: { bad_sig: 0 } };
   try { board = readSavedBoard(boardDir); } catch { log("", `  board ${boardDir} が読めない: join 済み DID は 0 として判定`); }
   const allFrames = decodeAll(exp.rows);
