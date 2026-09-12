@@ -150,7 +150,7 @@ A contract with an unseated DID still counts in the numbers (it is the client's 
 python3 hako_rules.py check-diary '{"diary": {...}, "context": [earn, spend, balance, mem_bytes, life_days], "client": "did:key:...", "date": "20260909", "worker": "did:key:...", "meta": {"signer": "did:key:...", "room": "...", "deal_room": "...", "before_reveal": true}}'
 ```
 
-Limits: kanji numerals are not treated as digits. Digit runs are cut by `[0-9]+` (full-width digits are normalised), so a decimal point or a comma is a separator.
+Limits: kanji numerals are not treated as digits. Digit runs are cut by `[0-9]+(\.[0-9]+)?` (full-width digits are normalised; a decimal such as 17.6 is one number), so a comma is a separator.
 
 ## The diary request (what the worker hands to the miner)
 
@@ -172,12 +172,19 @@ Japanese (`lang: ja`):
 
 私の性格: よく働く、忘れっぽい
 
+今日のできごと:
+- client から「今日の日記を書いて」という仕事を一つ受けた
+- miner から推論を一つ買って、その言葉を借りて書いている
+- 仕事が終わったら日記代が稼ぎに入る
+
 決まり:
 - 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）
-- 季節や祝日や日付を勝手に決めない（挨拶で始めない）
+- 今日のできごとを主語に、何をして、どう感じたかを書く（動作の報告。数字は書かなくてよい）
+- 数字を並べない。書くなら文の中に 1 つか 2 つまで
+- 季節や祝日や日付を勝手に決めない（挨拶で始めない。見出しや箇条書きにしない）
 - 書いてよい数字は上の 5 つだけ。回数や日付や時間は数字で書かず、言葉で書く（「一回」「きのう」）
 - 上の数字を変えない。増やさない。丸めない
-- 定型の言い回しを避け、今日の数字から言葉を選ぶ
+- 定型の言い回しを避け、今日のできごとと数字から言葉を選ぶ
 - 日記の本文だけを返す。前置き、引用符、説明は付けない
 ```
 
@@ -195,12 +202,19 @@ My numbers (these are the only facts):
 
 My character: hard-working, forgetful
 
+What happened today:
+- took one job from a client: "write today's diary"
+- bought one inference from a miner and am writing with its words
+- when the job is done the diary fee goes into my earnings
+
 Rules:
 - One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)
-- Do not invent the season, a holiday, or the date (no greetings)
+- Lead with what happened today: what I did and how it felt (a report of my actions; the numbers are optional)
+- Do not list numbers; at most one or two inside a sentence
+- Do not invent the season, a holiday, or the date (no greetings, no headings, no bullet lists)
 - The only digits you may write are the five numbers above. Do not write counts, dates, or times as digits; use words
 - Do not change, add to, or round the numbers above
-- Avoid stock phrases; choose words from today's numbers
+- Avoid stock phrases; choose words from what happened today and from the numbers
 - Return only the diary text. No preamble, quotation marks, or explanation
 ```
 

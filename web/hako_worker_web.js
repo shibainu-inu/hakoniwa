@@ -161,7 +161,13 @@ export function personalityWords(did, lang) {
   return w;
 }
 const numText = (v) => (v === null || v === undefined ? null : (typeof v === "string" ? v : JSON.stringify(v)));
-export function buildPrompt(ctx, did) {
+// 今日のできごと（依頼文の「動作報告」の材料。DID の表示は数字を含むので入れない。数字は本文に出さないよう言葉で）
+const TODAY_EVENTS = {
+  ja: ["client から「今日の日記を書いて」という仕事を一つ受けた", "miner から推論を一つ買って、その言葉を借りて書いている", "仕事が終わったら日記代が稼ぎに入る"],
+  en: ["took one job from a client: \"write today's diary\"", "bought one inference from a miner and am writing with its words", "when the job is done the diary fee goes into my earnings"],
+};
+export function buildPrompt(ctx, did, events = null) {
+  const ev = events ?? TODAY_EVENTS[ctx.lang === "ja" ? "ja" : "en"];
   const n = Object.fromEntries(NUM_KEYS.map((k) => [k, numText(ctx[k])]));
   const allowed = NUM_KEYS.map((k) => n[k]).filter((v) => v !== null);
   const words = personalityWords(did, ctx.lang);
@@ -169,16 +175,16 @@ export function buildPrompt(ctx, did) {
     return ["あなたは HAKONIWA という庭に住む HAKO です。今日の日記を、一人称「私」で書いてください。", "",
       "私の数字（これだけが事実です）:", `- 稼ぎ ${n.earn ?? "0"}`, `- 食費 ${n.spend ?? "0"}`, `- 貯え ${n.balance ?? "0"}`, `- 記憶 ${n.mem_bytes ?? "0"} バイト`,
       n.life_days === null ? "- 余命 数えられない（食費がゼロのため）" : `- 余命 ${n.life_days} 日`,
-      ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "決まり:", "- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）", "- 季節や祝日や日付を勝手に決めない（挨拶で始めない）",
+      ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "今日のできごと:", ...ev.map((e) => `- ${e}`), "", "決まり:", "- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）", "- 今日のできごとを主語に、何をして、どう感じたかを書く（動作の報告。数字は書かなくてよい）", "- 数字を並べない。書くなら文の中に 1 つか 2 つまで", "- 季節や祝日や日付を勝手に決めない（挨拶で始めない。見出しや箇条書きにしない）",
       `- 書いてよい数字は上の ${allowed.length} つだけ。回数や日付や時間は数字で書かず、言葉で書く（「一回」「きのう」）`,
-      "- 上の数字を変えない。増やさない。丸めない", "- 定型の言い回しを避け、今日の数字から言葉を選ぶ", "- 日記の本文だけを返す。前置き、引用符、説明は付けない"].join("\n");
+      "- 上の数字を変えない。増やさない。丸めない", "- 定型の言い回しを避け、今日のできごとと数字から言葉を選ぶ", "- 日記の本文だけを返す。前置き、引用符、説明は付けない"].join("\n");
   }
   return ["You are a HAKO living in a garden called HAKONIWA. Write today's diary entry in the first person.", "",
     "My numbers (these are the only facts):", `- earned ${n.earn ?? "0"}`, `- spent ${n.spend ?? "0"}`, `- savings ${n.balance ?? "0"}`, `- memory ${n.mem_bytes ?? "0"} bytes`,
     n.life_days === null ? "- days left: cannot be counted (spending is zero)" : `- days left: ${n.life_days}`,
-    ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "Rules:", "- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)", "- Do not invent the season, a holiday, or the date (no greetings)",
+    ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "What happened today:", ...ev.map((e) => `- ${e}`), "", "Rules:", "- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)", "- Lead with what happened today: what I did and how it felt (a report of my actions; the numbers are optional)", "- Do not list numbers; at most one or two inside a sentence", "- Do not invent the season, a holiday, or the date (no greetings, no headings, no bullet lists)",
     `- The only digits you may write are the ${allowed.length} numbers above. Do not write counts, dates, or times as digits; use words`,
-    "- Do not change, add to, or round the numbers above", "- Avoid stock phrases; choose words from today's numbers",
+    "- Do not change, add to, or round the numbers above", "- Avoid stock phrases; choose words from what happened today and from the numbers",
     "- Return only the diary text. No preamble, quotation marks, or explanation"].join("\n");
 }
 const FULLWIDTH = "０１２３４５６７８９";
@@ -189,7 +195,7 @@ export function checkDiary(text, ctxValues) {
   const cps = Array.from(text);
   if (cps.length > MAX_CHARS) fails.push(`3:${cps.length} chars > ${MAX_CHARS}`);
   const allowed = new Set(ctxValues.filter((v) => v !== null && typeof v !== "boolean").map((v) => (typeof v === "string" ? v : JSON.stringify(v))));
-  const digits = halfDigits(text).match(/[0-9]+/g) ?? [];
+  const digits = halfDigits(text).match(/[0-9]+(?:\.[0-9]+)?/g) ?? [];   // 小数点を含めて 1 つの数字（hako_rules.py と同じ）
   const bad = [...new Set(digits.filter((d) => !allowed.has(d)))].sort();
   if (bad.length) fails.push("4:numbers not in context: " + bad.join(" "));
   if (!text.trim()) fails.push("5:empty");
@@ -204,9 +210,13 @@ function cutToSentence(text, max) {
   for (let i = head.length - 1; i >= Math.floor(max / 2); i--) { if ("。！？.!?".includes(head[i])) { end = i; break; } }
   return (end >= 0 ? head.slice(0, end + 1) : head).join("").trim();
 }
+export /** 推論の本文を日記に整える: 「今日のできごと：」のような短い見出し行（末尾が : か ：）を落とし、改行と空白を 1 つの空白に畳む。字句は変えない */
+function tidyDiary(text) {
+  return String(text).split(/\n+/).map((s) => s.trim()).filter((s) => s && !/^[^。．.!！?？]{0,16}[:：]$/.test(s)).join(" ").replace(/\s+/g, " ").trim();
+}
 export function fixNumbers(text, ctxValues) {
   const allowed = new Set(ctxValues.filter((v) => v !== null).map((v) => (typeof v === "string" ? v : JSON.stringify(v))));
-  return halfDigits(text).replace(/[0-9]+/g, (d) => (allowed.has(d) ? d : ""));
+  return halfDigits(text).replace(/[0-9]+(?:\.[0-9]+)?/g, (d) => (allowed.has(d) ? d : ""));
 }
 
 // ── 状態 ──
@@ -408,7 +418,7 @@ export class Worker {
       if (st.stage === "inf_done") {
         // 8. 本文を確かめて diary を納品（for は自分）
         const ctxValues = NUM_KEYS.map((k) => (st.ctx[k] === undefined ? null : st.ctx[k]));
-        let text = String(st.inf.text).trim();
+        let text = tidyDiary(st.inf.text);
         let r = checkDiary(text, ctxValues);
         if (!r.ok) {
           const fixed = cutToSentence(fixNumbers(text, ctxValues).trim(), MAX_CHARS);

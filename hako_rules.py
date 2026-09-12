@@ -27,7 +27,7 @@
       （部屋・順・署名者は行の外側の情報なので meta で受け取る。meta に無い項目は判定できず、ok は null）
     2 宛先と日付 … for ＝ client の DID、date ＝ offer を出した日（UTC）
     3 長さ … \\uXXXX を戻したあとの本文が 140 文字以内（コードポイント）
-    4 数字を変えていない … 本文中の数字の並び（[0-9]+、全角数字は半角化）を全部取り出し、
+    4 数字を変えていない … 本文中の数字の並び（[0-9]+ に小数点つきの続きを含める。17.6 は 1 つ。全角数字は半角化）を全部取り出し、
       その全部が context の 5 値のどれかと文字列で完全一致。数字が 1 つも無ければ合格。
       context が null で数字があれば判定できず、ok は null
     5 空でない … 本文が空白だけではない
@@ -43,7 +43,7 @@ import sys
 MAX_CHARS = 140
 NOTE_NS_PREFIX = "hakoniwa-"
 _FULLWIDTH = str.maketrans("０１２３４５６７８９", "0123456789")
-_DIGITS = re.compile(r"[0-9]+")
+_DIGITS = re.compile(r"[0-9]+(?:\.[0-9]+)?")   # 小数点を含めて 1 つの数字（余命 17.6 など。2026-09-13）
 
 
 def context_path(did, kind, suffix):
