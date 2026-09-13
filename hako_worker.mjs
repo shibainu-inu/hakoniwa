@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// hako_worker.mjs — 箱庭の worker（ルール v0.7）。client の「あなたの今日の日記を書いて」の offer を 1 日 1 本受け、自分の数字のノートを置き、
+// hako_worker.mjs — 箱庭の worker（ルール v0.7、本数は v0.10）。client の「あなたの今日の日記を書いて」の offer を 1 日 N 本（hako_box.json の diaries_per_worker_day、いま 3）まで受け、自分の数字のノートを置き、
 // miner から推論を買って自分の日記を書き、納品して reveal する。役の表（HAKONIWA-RULES.md v0.7「動き方」）の worker の行を 1 周にしたもの。
 // 用法: read -s TC_PASS && export TC_PASS   # パスフレーズは端末に打つ。コマンド行に書かない
 //       node hako_worker.mjs                # 10 分ごとのループ（HAKO_WORKER_INTERVAL_SEC で変更）
@@ -18,7 +18,7 @@
 //   2. 候補（client の日記 offer）: type offer / role payer / asset PAPER / rails に paper / lock hash / job.id が hakoniwa-diary- /
 //      amount ≥ HAKO_WORKER_MIN / expiresMs と claimByMs 未到来 / 自分の offer ではない（client ≠ worker）/
 //      出した DID が庭に join 済みで client 役 / 運営以外の join 済み DID の accept が先に無い（決定 12。client は運営以外を先に lock するので、
-//      運営 worker の accept が先にあっても受けてよい）/ 今日（UTC）まだ自分の日記の契約が無い（1 worker 1 日 1 本）。乱数は切り、1 周に 1 件受ける
+//      運営 worker の accept が先にあっても受けてよい）/ 今日（UTC）の自分の日記の契約が N 本未満（1 worker 1 日 N 本。契約にならなかった段は数えない）。乱数は切り、1 周に 1 件受ける
 //   3. 自分の context ノート /kv/hakoniwa-<自分の末尾 8 小文字>/diary-<YYYYMMDD>（5 つの数字は HAKO_STATS から。整数、桁区切りなし）を置いてから
 //      accept（hash lock）。accept と preimage は投稿前に jobs.json（0600）に残す
 //   4. client の lock を待つ（PaperRail.verifyLock）。claimByMs までに無ければ諦める
@@ -55,6 +55,7 @@ const STATS = process.env.HAKO_STATS ?? path.join(homedir(), "hako_stats", "late
 const INTERVAL_SEC = Number(process.env.HAKO_WORKER_INTERVAL_SEC ?? BOX.worker_interval_sec);   // 数字と名前の既定は hako_box.json（決定 16）。env で上書き
 const MIN_AMOUNT = Number(process.env.HAKO_WORKER_MIN ?? 0);
 const MAX_PER_ROUND = Number(process.env.HAKO_WORKER_MAX_PER_ROUND ?? 1);
+const MAX_PER_DAY = Number(process.env.HAKO_WORKER_MAX_PER_DAY ?? BOX.diaries_per_worker_day);   // 1 日に受ける日記の本数（決定 17 ②）
 const INF_PRICE = String(process.env.HAKO_WORKER_INF_PRICE ?? BOX.inference_price);
 const INF_EXPIRES_MIN = Number(process.env.HAKO_WORKER_INF_EXPIRES_MIN ?? 120);
 const INF_CLAIMBY_MIN = Number(process.env.HAKO_WORKER_INF_CLAIMBY_MIN ?? 240);
@@ -88,7 +89,7 @@ const short = (did) => "…" + String(did).slice(-5);
 const iso = (ms) => (typeof ms === "number" ? new Date(ms).toISOString() : String(ms));
 
 // ── 2. 日記 offer の候補条件（1 つずつ。落ちた条件は実際の値と一緒に残す） ──
-function judge(f, { acceptsByRef, myDid, mine, now, joined, operators, doneToday }) {
+function judge(f, { acceptsByRef, myDid, mine, now, joined, operators, todayCount }) {
   const accs = acceptsByRef.get(f.id) ?? [];
   const e = joined.get(f.from);
   const blocking = accs.filter((a) => joined.has(a.from) && !operators.has(a.from));   // 運営以外の join 済み DID の accept
@@ -107,15 +108,15 @@ function judge(f, { acceptsByRef, myDid, mine, now, joined, operators, doneToday
     { cond: "運営以外の join 済み DID の accept が先に無い", ok: blocking.length === 0,
       actual: accs.length === 0 ? "none" : accs.map((a) => `seq ${a.seq} ${short(a.from)}${joined.has(a.from) ? (operators.has(a.from) ? " (運営)" : " (join 済み)") : " (庭の外)"}`).join("; ") },
     { cond: "自分がまだ accept していない", ok: !mine.has(f.id), actual: mine.has(f.id) ? "jobs.json にある" : "none" },
-    { cond: "今日（UTC）まだ自分の日記の契約が無い", ok: !doneToday, actual: doneToday ? "jobs.json に今日の契約がある" : "none" },
+    { cond: `今日（UTC）の自分の日記の契約が ${MAX_PER_DAY} 本未満`, ok: todayCount < MAX_PER_DAY, actual: `jobs.json に今日の契約が ${todayCount} 本` },
   ];
 }
 const failText = (fails) => fails.map((c) => `${c.cond}: ${c.actual}`).join(" | ");
-const DEAD_STAGES = new Set(["expired", "no_lock"]);                    // 今日の 1 本として数えない段（契約にならなかった）
+const DEAD_STAGES = new Set(["expired", "no_lock"]);                    // 今日の本数に数えない段（契約にならなかった）
 function candidates(allFrames, freshFrames, myDid, jobs, now, joined, onSkip, operators = new Set()) {
   const today = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
-  const doneToday = Object.values(jobs).some((j) => j.date === today && !DEAD_STAGES.has(j.stage));
-  const ctx = { acceptsByRef: indexAccepts(allFrames), myDid, mine: new Set(Object.values(jobs).map((j) => j.offer_id)), now, joined, operators, doneToday };
+  const todayCount = Object.values(jobs).filter((j) => j.date === today && !DEAD_STAGES.has(j.stage)).length;
+  const ctx = { acceptsByRef: indexAccepts(allFrames), myDid, mine: new Set(Object.values(jobs).map((j) => j.offer_id)), now, joined, operators, todayCount };
   const out = [];
   for (const { seq, ts, frame: f } of freshFrames) {
     if (f.type !== "offer") continue;

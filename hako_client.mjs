@@ -15,11 +15,11 @@
 //
 // 1 周ですること（状態は state/days.json、0600。日付 YYYYMMDD がキー、その下は job.id ごと）:
 //   1. 掲示板の join、/r/tclk-offers の export、fold の出力（HAKO_STATS: did の state / operator、box.operators）を読む
-//   2. 今日（UTC）の「働ける worker」= join 済みで worker 役、自分以外、fold の state が seated（fold にまだ無い DID は seated 扱い）、今日まだ lock していない。
+//   2. 今日（UTC）の「働ける worker」= join 済みで worker 役、自分以外、fold の state が seated（fold にまだ無い DID は seated 扱い）、今日の lock が N 本未満（hako_box.json の diaries_per_worker_day、いま 3）。
 //      開いている offer（accept 待ち）が働ける worker の数に足りず、今日の lock ＋ 開いている offer が上限（20）未満なら、通し番号を進めて日記 offer を出す
 //      （role payer、hash lock、PAPER、paper、job.id は hakoniwa-diary-<末尾 4 文字>-<YYYYMMDD>-<通し番号>、job.context は無し。数字のノートは worker が置く）。
 //      expiresMs を過ぎて lock できる accept が無ければ同じ job.id で出し直す（決定 1 ①）
-//   3. offer への accept のうち、join 済み・worker 役・自分以外・contract 再計算一致・fold で seated・今日まだ lock していない worker のものを、
+//   3. offer への accept のうち、join 済み・worker 役・自分以外・contract 再計算一致・fold で seated・今日の lock が N 本未満の worker のものを、
 //      運営以外（stats の box.operators に無い DID）を先に seq 順で 1 件 lock する。運営の worker の accept は、offer を出してから
 //      HAKO_CLIENT_OPERATOR_WAIT_MIN 分の間に運営以外の accept が無いときだけ lock する（門の再送は claimByMs まで）
 //   4. 取引の部屋に worker の diary と reveal が届いたら、worker のノート /kv/hakoniwa-<worker 末尾 8 小文字>/diary-<YYYYMMDD> の 5 値で
@@ -57,6 +57,7 @@ const INTERVAL_SEC = Number(process.env.HAKO_CLIENT_INTERVAL_SEC ?? BOX.client_i
 const MAX_PER_DAY = Number(process.env.HAKO_CLIENT_MAX_PER_DAY ?? BOX.client_max_per_day);
 const MAX_OPEN = Number(process.env.HAKO_CLIENT_MAX_OPEN ?? 5);
 const OPERATOR_WAIT_MIN = Number(process.env.HAKO_CLIENT_OPERATOR_WAIT_MIN ?? BOX.operator_wait_min);
+const PER_WORKER_DAY = Number(process.env.HAKO_CLIENT_DIARIES_PER_WORKER_DAY ?? BOX.diaries_per_worker_day);   // 1 worker に 1 日 lock する日記の本数（決定 17 ②）
 const STATE_DIR = process.env.HAKO_CLIENT_STATE ?? path.join(homedir(), ".hako_client");
 const LOG_PATH = process.env.HAKO_CLIENT_LOG ?? path.join(homedir(), "hako_client.log");
 const RULES_PY = process.env.HAKO_RULES_PY ?? path.join(HERE, "hako_rules.py");
@@ -114,12 +115,19 @@ function readStats() {
 }
 
 // ── 2. 働ける worker ──
+/** 今日 lock した worker とその本数。full(did) は「もう N 本 lock した」（N = PER_WORKER_DAY） */
+class LockedWorkers {
+  constructor(dids = []) { this.count = new Map(); for (const d of dids) this.add(d); }
+  add(d) { this.count.set(d, (this.count.get(d) ?? 0) + 1); }
+  of(d) { return this.count.get(d) ?? 0; }
+  full(d) { return this.of(d) >= PER_WORKER_DAY; }
+}
 function eligibleWorkers(joined, st, myDid, lockedWorkers) {
   const out = [];
   for (const [d, e] of joined) {
     if (d === myDid || !hasRole(e, "worker")) continue;
     if (st.stateOf(d) !== "seated") continue;
-    if (lockedWorkers.has(d)) continue;
+    if (lockedWorkers.full(d)) continue;
     out.push(d);
   }
   return out;
@@ -136,7 +144,7 @@ function chooseAccept(offer, offeredAtMs, accs, joined, st, myDid, lockedWorkers
     if (a.from === myDid) reasons.push("自分");
     if (a.from !== f.from) reasons.push("署名者と from が違う");
     if (st.stateOf(a.from) !== "seated") reasons.push(`席にいない (${st.stateOf(a.from)})`);
-    if (lockedWorkers.has(a.from)) reasons.push("今日すでに lock した worker");
+    if (lockedWorkers.full(a.from)) reasons.push(`今日すでに ${PER_WORKER_DAY} 本 lock した worker`);
     const expect = contractId(offer, { from: f.from, ref: f.ref, statement: f.statement, paymentKey: f.paymentKey, nonce: f.nonce });
     if (expect !== f.contract) reasons.push("contract id 不一致");
     const op = st.operators.has(a.from);
@@ -214,7 +222,7 @@ async function step(me) {
   }
   saveDays(days);
 
-  const lockedWorkers = new Set(Object.values(jobs).filter((j) => LOCKED_STAGES.includes(j.stage) || j.stage === "gate_closed").map((j) => j.worker).filter(Boolean));
+  const lockedWorkers = new LockedWorkers(Object.values(jobs).filter((j) => LOCKED_STAGES.includes(j.stage) || j.stage === "gate_closed").map((j) => j.worker).filter(Boolean));
   const lockedToday = Object.values(jobs).filter((j) => LOCKED_STAGES.includes(j.stage)).length;
   const open = Object.values(jobs).filter((j) => OPEN_STAGES.includes(j.stage));
   const workers = eligibleWorkers(board.joined, st, myDid, lockedWorkers);

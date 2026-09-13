@@ -29,7 +29,7 @@ hako_box.json（HAKO_BOX で場所を変えられる）から読む（決定 16�
        accept の contract は tclk_ids.contract_id で計算し直し、一致しないものは捨てて件数を残す。
        同じ offer に accept が複数あってよい（accept ごとに契約 id ができる）。有効なのは払う側が lock した契約だけ（決定 12）。
        payer が同じ offer に lock を 2 件以上出したら最初の 1 件（ts、同時なら seq）だけ数え、残りは lock_dup_offer。
-       同じ job.id は最初に lock された 1 本だけ（残りは job_dup）。日記は 1 worker 1 日 1 本（worker_day_dup）、1 client 1 日 20 本まで
+       同じ job.id は最初に lock された 1 本だけ（残りは job_dup）。日記は 1 worker 1 日 N 本まで（diaries_per_worker_day、いま 3。lock の順に数え、N+1 本目からは worker_day_dup）、1 client 1 日 20 本まで
        （client_day_limit）。日は UTC、lock の時刻。lock されなかった契約と落とした契約は box.contracts_unlocked に残す
        job.id に -test- を含む契約は試験用。状態は box.test_contracts に別に残し（claimed なら would_settle に動いたはずの額）、
        PAPER も発行も本番の数字に入れない
@@ -92,6 +92,7 @@ STARVE_BELOW = 240.0          # 枯渇: 貯えが一番安い推論代を下回�
 GRADUATE_EARN = 1500.0        # 卒業: 累計の稼ぎがこれに達した receipt
 LEAVE_AFTER_MIDNIGHTS = 2     # 席を離れる: 00:00Z を 2 回、何もしないまま越えた
 DIARY_PER_CLIENT_DAY = 20     # 1 つの client が 1 日（UTC、lock の時刻）に lock できる日記
+DIARIES_PER_WORKER_DAY = 3    # 1 つの worker の 1 日（UTC、lock の時刻）に数える日記（決定 17 ②。v0.7〜v0.9 は 1）
 SEAT_ITERATIONS = 8           # 数えない join が変わらなくなるまで畳み直す回数の上限
 
 # ── 箱の設定（決定 16 ①）: hako_box.json（HAKO_BOX で場所を変えられる）。無ければ上の既定＝いまの値。読んだ値で上の定数を置き換える ──
@@ -99,7 +100,7 @@ BOX_PATH = os.environ.get("HAKO_BOX") or str(Path(__file__).resolve().parent / "
 BOX_DEFAULTS = {"box": "hakoniwa", "venue": "https://technocore.chat", "offers_room": OFFER_ROOM, "initial_paper": INITIAL,
                 "diary_price": 400, "inference_price": 240, "inference_min": 240, "graduate_at": GRADUATE_EARN, "seats": SEATS,
                 "starve_below": STARVE_BELOW, "leave_after_midnights": LEAVE_AFTER_MIDNIGHTS, "client_max_per_day": DIARY_PER_CLIENT_DAY,
-                "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
+                "diaries_per_worker_day": DIARIES_PER_WORKER_DAY, "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
                 "validator_share": 0.15, "operators": list(OPERATOR_DIDS)}
 BOX_KEYS = tuple(BOX_DEFAULTS)
 
@@ -120,7 +121,7 @@ def load_box(path=None):
 def apply_box(cfg):
     """設定で fold の定数を置き換える（値の意味と式は変えない）。hako_rules のノートの名前空間も箱の名前に合わせる。戻り値は cfg"""
     global BOX, INITIAL, MINER_SHARE, BOARD_ROOM, OFFER_ROOM, JOB_PREFIX, INF_PREFIX, OPERATOR_DIDS, SEATS, STARVE_BELOW, GRADUATE_EARN
-    global LEAVE_AFTER_MIDNIGHTS, DIARY_PER_CLIENT_DAY
+    global LEAVE_AFTER_MIDNIGHTS, DIARY_PER_CLIENT_DAY, DIARIES_PER_WORKER_DAY
     BOX = cfg
     INITIAL = float(cfg["initial_paper"]) if isinstance(cfg["initial_paper"], float) else int(cfg["initial_paper"])
     MINER_SHARE = round(1.0 - float(cfg["validator_share"]), 6)
@@ -129,6 +130,7 @@ def apply_box(cfg):
     OPERATOR_DIDS = tuple(cfg["operators"])
     SEATS = int(cfg["seats"]); STARVE_BELOW = float(cfg["starve_below"]); GRADUATE_EARN = float(cfg["graduate_at"])
     LEAVE_AFTER_MIDNIGHTS = int(cfg["leave_after_midnights"]); DIARY_PER_CLIENT_DAY = int(cfg["client_max_per_day"])
+    DIARIES_PER_WORKER_DAY = int(cfg["diaries_per_worker_day"])
     hako_rules.NOTE_NS_PREFIX = f"{cfg['box']}-"
     return cfg
 
@@ -393,16 +395,16 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         for _, _, cid in locks[1:]:
             cands[cid]["dropped"] = "lock_dup_offer"; stats["lock_dup_offer"] += 1
         winners.append(locks[0])
-    deals, job_seen, worker_day, client_day = {}, set(), set(), defaultdict(int)
+    deals, job_seen, worker_day, client_day = {}, set(), defaultdict(int), defaultdict(int)
     for lock_ts, _, cid in sorted(winners, key=lambda x: (x[0], x[1])):   # 同じ job.id（出し直し）は最初に lock された 1 本だけ
         c = cands[cid]
         if c["job"] in job_seen: c["dropped"] = "job_dup"; stats["job_dup"] += 1; continue
         job_seen.add(c["job"])
-        if c["kind"] == "diary" and not c["test"]:                           # 日記: 1 worker 1 日 1 本、1 client 1 日 20 本（日は lock の時刻、UTC）
+        if c["kind"] == "diary" and not c["test"]:                           # 日記: 1 worker 1 日 N 本、1 client 1 日 20 本（日は lock の時刻、UTC。lock の順）
             day = lock_ts.strftime("%Y-%m-%d")
-            if (c["payee"], day) in worker_day: c["dropped"] = "worker_day_dup"; stats["worker_day_dup"] += 1; continue
+            if worker_day[(c["payee"], day)] >= DIARIES_PER_WORKER_DAY: c["dropped"] = "worker_day_dup"; stats["worker_day_dup"] += 1; continue
             if client_day[(c["payer"], day)] >= DIARY_PER_CLIENT_DAY: c["dropped"] = "client_day_limit"; stats["client_day_limit"] += 1; continue
-            worker_day.add((c["payee"], day)); client_day[(c["payer"], day)] += 1
+            worker_day[(c["payee"], day)] += 1; client_day[(c["payer"], day)] += 1
         deals[cid] = c
     unlocked = [{"contract": c["contract"], "job": c["job"], "accept_seq": c["accept_seq"], "payee": c["payee"], "dropped": c["dropped"]}
                 for c in cands.values() if c["contract"] not in deals]

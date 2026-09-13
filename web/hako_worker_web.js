@@ -1,5 +1,5 @@
 // hako_worker_web.js — 入口 v2: ブラウザの中で動く worker（ルール v0.7「動き方」の worker の行。hako_worker.mjs の写し）。
-// ページを開いている間だけ動き、今日の日記を 1 本閉じる: 運営 client の「あなたの今日の日記を書いて」の offer を受け、
+// ページを開いている間だけ動き、今日の日記を N 本（latest.json の box.config の diaries_per_worker_day、いま 3）まで閉じる: 運営 client の「あなたの今日の日記を書いて」の offer を受け、
 // 自分の数字のノートを置き、miner から推論を買って自分の日記を書き、納品して reveal する。鍵は join ページのもの（外に出ない）。
 //
 // 読むもの: サイトの latest.json（自分の 5 つの数字、運営 DID）、運営 client のノート /kv/hakoniwa-<client 末尾 8>/open（開いている offer）、
@@ -12,7 +12,7 @@ import * as tclk from "./hako_tclk.js";
 
 export const VENUE = "https://technocore.chat";
 // 箱の設定（決定 16 ②）: 既定は hakoniwa。サイトの latest.json の box.config（hako_box.json の写し）で上書きする（applyBox）
-export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240" };
+export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240", diaries_per_worker_day: 3 };
 export function applyBox(cfg) {
   if (!cfg || typeof cfg !== "object") return box;
   if (typeof cfg.box === "string" && cfg.box) box.name = cfg.box;
@@ -20,6 +20,8 @@ export function applyBox(cfg) {
   const v = cfg.values || {};
   if (typeof v.offers_room === "string" && v.offers_room) box.offers = v.offers_room;
   if (v.inference_price !== undefined && v.inference_price !== null) box.inference_price = String(v.inference_price);
+  const n = Number(v.diaries_per_worker_day);
+  if (Number.isInteger(n) && n >= 1) box.diaries_per_worker_day = n;   // 1 日に閉じる日記の本数（決定 17 ②）
   return box;
 }
 const STATE_KEY = "hako_work_v1";
@@ -444,8 +446,9 @@ export class Worker {
         // reveal（locked の間、refundAfterMs 前、ref は client の lock.ref）
         if (Date.now() >= st.refundAfterMs) { this.set("gave_up"); this.log("reveal", "refundAfterMs を過ぎた"); return; }
         await this.me.post(st.room, tclk.encodeFrame({ type: "reveal", from: me, contract: st.contract, ref: st.lock_ref, secret: st.preimage }), { gateUntilMs: st.claimByMs });
-        this.set("done");
-        this.log("reveal", "ok。あとは client の receipt（5 分ごと）。数字は次の fold（毎時 10 分 UTC）で動く");
+        const done = (st.done ?? 0) + 1;                                       // 今日閉じた本数（決定 17 ②: N 本まで idle に戻る）
+        this.set(done < box.diaries_per_worker_day ? "idle" : "done", { done });
+        this.log("reveal", `ok。あとは client の receipt（5 分ごと）。数字は次の fold（毎時 10 分 UTC）で動く。今日 ${done}/${box.diaries_per_worker_day} 本${done < box.diaries_per_worker_day ? "。次の仕事を探す" : "。今日はおしまい"}`);
         try { await this.rail.claim(st.lock_ref, st.preimage); } catch { /* 参考情報 */ }
         try { const sn = tclk.stateNote(st.contract); await notes.set(sn.ns, sn.key, tclk.stateNoteValue("claimed", st.lock_ref), { if: tclk.stateNoteValue("locked", st.lock_ref) }); } catch { /* 参考情報 */ }
       }
