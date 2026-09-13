@@ -22,8 +22,9 @@ hako_box.json（HAKO_BOX で場所を変えられる）から読む（決定 16�
        mem  … 行ごとに (ts, bytes) を残す。家賃は 5 で引く
        serve … text の UTF-8 の sha256 が sha256 と一致するかを記録
        issue … 運営の client への蛇口（v0.7）。出せるのは、その時点で有効な rules を最後に出した DID。to は運営の DID（OPERATOR_DIDS）で箱に入っているもの。
-               pool が「to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計」と小数 2 桁で一致するときだけ to に配る（issued）。
-               一致しなければ box.invalid_issue に残して配らない。同じ (date, to) は最初の 1 件。pool が 0 なら配らない
+               pool が「その issue の時刻までに to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計 − その (date, to) でそれまでに配った issue の合計」
+               と小数 2 桁で一致するときだけ to に配る（issued）。一致しなければ box.invalid_issue に残して配らない。同じ (date, to) に何度出してもよい（v0.9、決定 17）。
+               pool が 0 なら配らない
   3. /r/tclk-offers: offer / accept（asset PAPER、job.id が hakoniwa- で始まるものだけ）
        accept の contract は tclk_ids.contract_id で計算し直し、一致しないものは捨てて件数を残す。
        同じ offer に accept が複数あってよい（accept ごとに契約 id ができる）。有効なのは払う側が lock した契約だけ（決定 12）。
@@ -484,14 +485,15 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         })
     contracts.sort(key=lambda c: (c["locked_ts"], c["locked_seq"]))   # seq は部屋ごとなので、まず時刻で並べる
 
-    # 2'. 発行（取引が畳めてから。issue の seq 順）: 運営の client への蛇口。
-    #     to は運営の DID、pool は to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計。同じ (date, to) は最初の 1 件
-    diary_locked_by_date = defaultdict(float)             # (date, payer) → lock した日記の額の合計
+    # 2'. 発行（取引が畳めてから。issue の seq 順）: 運営の client への蛇口（v0.9、決定 17: 刻んで出せる）。
+    #     to は運営の DID、pool は「その issue の時刻までに to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計 − その (date, to) で
+    #     それまでに配った issue の合計」。同じ (date, to) に何度出してもよい。翌日にまとめて 1 件でも同じ式で通る（v0.7〜v0.8 の行と互換）
+    diary_locks_by_date = defaultdict(list)               # (date, payer) → [(lock の時刻, 額)]
     for d in deals.values():
         if d["kind"] == "diary" and d["lock"] and not d["test"]:
-            diary_locked_by_date[(parse_ts(d["lock"]["ts"]).strftime("%Y-%m-%d"), d["payer"])] += float(d["amount"])
+            lt = parse_ts(d["lock"]["ts"]); diary_locks_by_date[(lt.strftime("%Y-%m-%d"), d["payer"])].append((lt, float(d["amount"])))
     invalid_issue = []
-    issued_keys = set()
+    issued_so_far = defaultdict(float)                    # (date, to) → 配った pool の合計
     for iss in sorted(issues, key=lambda i: i["seq"]):
         ruler = next((r[3] for r in reversed(rules) if r[0] < iss["seq"]), None)
         if ruler is None or iss["from"] != ruler:
@@ -503,16 +505,16 @@ def _fold_core(by_room, stats, now, kv, uncounted):
             stats["issue_bad"] += 1; iss["status"] = "ignored: bad date or pool"; continue
         if to not in OPERATOR_DIDS or D(to)["joined"] is None:
             stats["issue_bad_to"] += 1; iss["status"] = "ignored: to is not an operator DID in the garden"; continue
-        if (date, to) in issued_keys:
-            stats["issue_dup"] += 1; iss["status"] = "ignored: not the first issue for the date and to"; continue
-        issued_keys.add((date, to))
-        computed = round(diary_locked_by_date.get((date, to), 0.0), 2)
+        at = parse_ts(iss["ts"])
+        locked = sum(a for (lt, a) in diary_locks_by_date.get((date, to), []) if lt <= at)
+        computed = round(locked - issued_so_far[(date, to)], 2)
+        iss["computed"] = computed
         if pool != computed:
             invalid_issue.append({"seq": iss["seq"], "date": date, "to": to, "pool": pool, "computed": computed})
             iss["status"] = f"invalid: pool {pool} != computed {computed}"; continue
         if pool <= 0:
             iss["status"] = "no distribution: pool is 0"; continue
-        x = D(to); x["issued"] += pool; x["ledger"].append((iss["ts"], "issued", pool))
+        x = D(to); x["issued"] += pool; x["ledger"].append((iss["ts"], "issued", pool)); issued_so_far[(date, to)] += pool
         iss["status"] = "distributed"
 
     # 5. DID ごとの数字と、席の層（席・退場・卒業）

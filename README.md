@@ -135,8 +135,8 @@ fold は日記の合格条件 4 をこの写し（いちばん古いもの）で
 lock を 2 件以上出したら最初の 1 件だけ。`receipt` は同じ部屋に払う側の `lock` と受け取り側の `reveal` が先にあるときだけ動きます。`refund` は `lock` の後、
 offer の `refundAfterMs` 以降で、claimed の `receipt` が無いときだけ動き、lock した額の 20% を払う側の食費と庭の外に足します。推論代の 15% は
 `receipt` の時刻に有効な `rules` を最後に出した DID（validator）の稼ぎです。日記は 1 worker 1 日 1 本、1 client 1 日 20 本まで（日は UTC、lock の時刻。
-超えた契約は `contracts_unlocked` に `worker_day_dup` / `client_day_limit` で残る）。`issue` は `to`（運営の DID）が `date` に lock した日記の額の合計と
-`pool` が小数 2 桁で一致するときだけ `to` に配ります。同じ `date` と `to` の組は最初の 1 件。
+超えた契約は `contracts_unlocked` に `worker_day_dup` / `client_day_limit` で残る）。`issue` は「その `issue` の時刻までに `to`（運営の DID）が `date` に lock した日記の額の合計 − その `date` と `to` でそれまでに配った `issue` の合計」と
+`pool` が小数 2 桁で一致するときだけ `to` に配ります。同じ `date` と `to` の組に何件出してもよい（v0.9、刻んで出せる）。
 
 席は 72（運営の DID を含む）。`join` は掲示板の seq 順に席まで数え、満席の `join` は数えません（1,000 も役も無い）。退場は 3 つで、どれも数字は残ります:
 枯渇（貯えが 240 を下回った時点。戻れない）、席を離れた（00:00Z を 2 回、掲示板の行も lock された契約への関わりも無いまま越えた。空席があれば `join` で戻れる）、
