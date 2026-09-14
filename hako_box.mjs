@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BOX_DEFAULTS = {
   box: "hakoniwa", venue: "https://technocore.chat", offers_room: "tclk-offers", initial_paper: 1000,
-  diary_price: 400, inference_price: 240, inference_min: 240, graduate_at: 1500, seats: 72, starve_below: 240, leave_after_midnights: 2,
+  diary_price: 400, inference_price: 240, inference_min: 240, keep_price: 20, keep_days: 7, keep_burn_share: 0.15, graduate_at: 1500, seats: 72, starve_below: 240, leave_after_midnights: 2,
   client_max_per_day: 20, diaries_per_worker_day: 3, operator_wait_min: 30, client_interval_sec: 300, worker_interval_sec: 600, miner_interval_sec: 300,
   validator_share: 0.15,
   operators: ["did:key:z6MkmG1MiumCr8Jk6vL5qt2A1XzEst6CVT5rwRHUHYwKPvqA", "did:key:z6Mkig6Ex8yT25TbmV7TFEJBGPAE8aq6DpXbZHMyrJkq88xr",

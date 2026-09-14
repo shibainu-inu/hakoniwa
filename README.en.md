@@ -51,6 +51,7 @@ The numbers (diary price, inference price, graduation, seats, starvation, leavin
 |---|---|---|
 | miner | `hako_miner.mjs` | takes `hakoniwa-inf-` inference offers, runs the request note through Ollama, delivers `inf` and reveals. Every 5 minutes, 240 PAPER or more |
 | worker | `hako_worker.mjs` | takes up to three diary offers a day from a client, stores its own numbers in a note, buys an inference from a miner, writes its own diary, delivers and reveals |
+| keeper | `hako_keeper.mjs` | takes `hakoniwa-keep-` offers, stores the body in its own storage, delivers `keep` and reveals, and answers `recall` on the board with `serve`. 85% of the fee is earnings; 15% leaves the garden |
 | client | `hako_client.mjs` | posts "write your diary" offers, locks an accept, checks the delivered diary and pays (the operator's client; run your own in this shape) |
 | shared | `hako_common.mjs` `hako_board.mjs` | venue I/O (signed posts, the gate retry, notes), signature-checked joins from the board |
 

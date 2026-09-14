@@ -74,6 +74,9 @@ import hako_rules
 INITIAL = 1000
 MINER_SHARE = 0.85            # 推論代の 85% が miner、15% は validator（有効な rules を最後に出した DID）。validator が無ければ庭の外へ
 PENALTY_SHARE = 0.20          # 途中でやめた罰金: 未消化分（lock した額の全部）の 20% が庭の外へ
+KEEPER_SHARE = 0.85           # 保管代の 85% が keeper、15% は庭の外へ（決定 18。記憶を持ち続ける費用）
+KEEP_PRICE = 20               # 保管代（日記 1 本を KEEP_DAYS 日）。fold は数えない（値は offer が決める）
+KEEP_DAYS = 7                 # 既定の預かり日数 N
 RENT_PER_KIB_DAY = 1.0        # 記憶の家賃（仮）
 SLEEP_DAYS_TO_ERASE = 7       # 眠りがこの日数続いたら記憶は消える
 BOARD_ROOM = "hakoniwa-board"
@@ -101,7 +104,9 @@ BOX_DEFAULTS = {"box": "hakoniwa", "venue": "https://technocore.chat", "offers_r
                 "diary_price": 400, "inference_price": 240, "inference_min": 240, "graduate_at": GRADUATE_EARN, "seats": SEATS,
                 "starve_below": STARVE_BELOW, "leave_after_midnights": LEAVE_AFTER_MIDNIGHTS, "client_max_per_day": DIARY_PER_CLIENT_DAY,
                 "diaries_per_worker_day": DIARIES_PER_WORKER_DAY, "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
-                "validator_share": 0.15, "operators": list(OPERATOR_DIDS)}
+                "validator_share": 0.15,
+                "keep_price": KEEP_PRICE, "keep_days": KEEP_DAYS, "keep_burn_share": round(1.0 - KEEPER_SHARE, 6),
+                "operators": list(OPERATOR_DIDS)}
 BOX_KEYS = tuple(BOX_DEFAULTS)
 
 
@@ -121,10 +126,13 @@ def load_box(path=None):
 def apply_box(cfg):
     """設定で fold の定数を置き換える（値の意味と式は変えない）。hako_rules のノートの名前空間も箱の名前に合わせる。戻り値は cfg"""
     global BOX, INITIAL, MINER_SHARE, BOARD_ROOM, OFFER_ROOM, JOB_PREFIX, INF_PREFIX, OPERATOR_DIDS, SEATS, STARVE_BELOW, GRADUATE_EARN
+    global KEEPER_SHARE, KEEP_PRICE, KEEP_DAYS
     global LEAVE_AFTER_MIDNIGHTS, DIARY_PER_CLIENT_DAY, DIARIES_PER_WORKER_DAY
     BOX = cfg
     INITIAL = float(cfg["initial_paper"]) if isinstance(cfg["initial_paper"], float) else int(cfg["initial_paper"])
     MINER_SHARE = round(1.0 - float(cfg["validator_share"]), 6)
+    KEEPER_SHARE = round(1.0 - float(cfg["keep_burn_share"]), 6)
+    KEEP_PRICE = cfg["keep_price"]; KEEP_DAYS = int(cfg["keep_days"])
     BOARD_ROOM = str(cfg["board"]); OFFER_ROOM = str(cfg["offers_room"])
     JOB_PREFIX = f"{cfg['box']}-"; INF_PREFIX = f"{cfg['box']}-inf-"
     OPERATOR_DIDS = tuple(cfg["operators"])
@@ -628,10 +636,11 @@ def _iso(t):
 
 
 def _settle(D, d, ts, burn_by_date, validator):
-    """receipt(claimed) を払う側が出した: 払う側の食費、受け取り側の稼ぎ。推論は 85/15（15% は validator。無ければ庭の外）"""
+    """receipt(claimed) を払う側が出した: 払う側の食費、受け取り側の稼ぎ。推論は 85/15（15% は validator。無ければ庭の外）、
+    保管は 85/15（15% は庭の外。決定 18）、日記は全額が受け取り側"""
     payer, payee, amt = D(d["payer"]), D(d["payee"]), float(d["amount"])
     if d["test"]:                                  # 試験用の契約: 動いたはずの額を残すだけで、数字には入れない
-        got = amt * MINER_SHARE if d["kind"] == "inf" else amt
+        got = amt * MINER_SHARE if d["kind"] == "inf" else (amt * KEEPER_SHARE if d["kind"] == "keep" else amt)
         d["would_settle"] = {"spend": round(amt, 2), "earn": round(got, 2), "burn": round(amt - got, 2)}
         return
     if payer["joined"] is None or payee["joined"] is None:
@@ -646,6 +655,11 @@ def _settle(D, d, ts, burn_by_date, validator):
             v = D(validator); v["earn"] += fee; v["ledger"].append((ts, "earn", fee))
         else:
             payee["burn"] += fee; burn_by_date[date] += fee
+    elif d["kind"] == "keep":                      # 保管代: 85% が keeper、15% は庭の外へ（決定 18）
+        got = amt * KEEPER_SHARE
+        fee = amt - got
+        payee["earn"] += got
+        payee["burn"] += fee; burn_by_date[date] += fee
     else:
         got = amt
         payee["earn"] += got

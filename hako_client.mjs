@@ -58,6 +58,11 @@ const MAX_PER_DAY = Number(process.env.HAKO_CLIENT_MAX_PER_DAY ?? BOX.client_max
 const MAX_OPEN = Number(process.env.HAKO_CLIENT_MAX_OPEN ?? 5);
 const OPERATOR_WAIT_MIN = Number(process.env.HAKO_CLIENT_OPERATOR_WAIT_MIN ?? BOX.operator_wait_min);
 const PER_WORKER_DAY = Number(process.env.HAKO_CLIENT_DIARIES_PER_WORKER_DAY ?? BOX.diaries_per_worker_day);   // 1 worker に 1 日 lock する日記の本数（決定 17 ②）
+const KEEP_PRICE = String(process.env.HAKO_KEEP_PRICE ?? BOX.keep_price);      // 保管代（決定 18。85% が keeper、15% は庭の外へ）
+const KEEP_ENABLED = process.env.HAKO_CLIENT_KEEP !== "0";                     // 0 で預かりを出さない
+const KEEP_EXPIRES_MIN = Number(process.env.HAKO_KEEP_EXPIRES_MIN ?? 120);
+const KEEP_CLAIMBY_MIN = Number(process.env.HAKO_KEEP_CLAIMBY_MIN ?? 240);
+const KEEP_REFUND_MIN = Number(process.env.HAKO_KEEP_REFUND_MIN ?? 360);
 const STATE_DIR = process.env.HAKO_CLIENT_STATE ?? path.join(homedir(), ".hako_client");
 const LOG_PATH = process.env.HAKO_CLIENT_LOG ?? path.join(homedir(), "hako_client.log");
 const RULES_PY = process.env.HAKO_RULES_PY ?? path.join(HERE, "hako_rules.py");
@@ -186,6 +191,39 @@ function newOffer(myDid, jobId, t) {
   });
 }
 
+function newKeepOffer(myDid, jobId, notePath, t) {
+  return makeOffer({
+    from: myDid, role: "payer", lock: "hash", amount: KEEP_PRICE, asset: "PAPER", rails: ["paper"],
+    expiresMs: t + KEEP_EXPIRES_MIN * 60_000, claimByMs: t + KEEP_CLAIMBY_MIN * 60_000, refundAfterMs: t + KEEP_REFUND_MIN * 60_000,
+    job: { proto: "hakoniwa", id: jobId, context: notePath },   // 本文と sha256 は依頼のノートに（ルール v0.11「keeper の仕事」）
+  });
+}
+
+/** 預かりの accept を選ぶ: join 済み・keeper 役・自分以外・contract 再計算一致。運営以外を先に、運営は OPERATOR_WAIT_MIN 分待つ */
+function chooseKeeper(offer, offeredAtMs, accs, joined, st, myDid, now) {
+  const why = [], ok = [];
+  for (const a of accs.slice().sort((x, y) => x.seq - y.seq)) {
+    const f = a.frame, e = joined.get(a.from), reasons = [];
+    if (!e) reasons.push("join していない"); else if (!hasRole(e, "keeper")) reasons.push(`役に keeper が無い [${e.roles.join(",")}]`);
+    if (a.from === myDid) reasons.push("自分");
+    if (a.from !== f.from) reasons.push("署名者と from が違う");
+    const expect = contractId(offer, { from: f.from, ref: f.ref, statement: f.statement, paymentKey: f.paymentKey, nonce: f.nonce });
+    if (expect !== f.contract) reasons.push("contract id 不一致");
+    const op = st.operators.has(a.from);
+    if (reasons.length === 0) ok.push({ a, op });
+    why.push(`seq ${a.seq} ${short(a.from)}${op ? " (運営)" : ""}: ${reasons.length ? reasons.join(", ") : "可"}`);
+  }
+  const participant = ok.find((x) => !x.op);
+  if (participant) return { chosen: participant.a, why };
+  const operator = ok.find((x) => x.op);
+  if (operator) {
+    const waitUntil = offeredAtMs + OPERATOR_WAIT_MIN * 60_000;
+    if (now < waitUntil) { why.push(`運営 keeper は ${new Date(waitUntil).toISOString()} まで待つ`); return { chosen: null, why }; }
+    return { chosen: operator.a, why };
+  }
+  return { chosen: null, why };
+}
+
 // ── 1 周 ──
 async function step(me) {
   const myDid = me.did;
@@ -249,6 +287,34 @@ async function step(me) {
     catch (e) { jlog(j.contract ?? j.offer.id, "round", `error ${e.message}`); }
   }
 
+  // 4'. 決定 18: receipt を出した日記を keeper に預ける（1 日記 1 件。offer を出し、accept を lock し、keep を確かめて receipt）
+  const keeps = (day.keeps ??= {});
+  if (KEEP_ENABLED && !DRY_RUN) {
+    for (const j of Object.values(jobs).sort((a, b) => a.n - b.n)) {
+      if (j.stage !== "claimed" || j.keep_job || !j.diary) continue;
+      const notePath = contextPath(myDid, "keep", j.contract.slice(2, 10));
+      const m = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
+      const value = JSON.stringify({ sha256: j.diary.sha256, text: j.diary.text, for: j.worker, date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}` });
+      try { if (!(await notes.set(m[1], m[2], value))) { jlog(j.contract, "keep-note", `書けない ${notePath}; 次の周`); continue; } }
+      catch (e) { jlog(j.contract, "keep-note", `fail ${e.message}`); continue; }
+      day.keep_serial = (day.keep_serial ?? 0) + 1;
+      const jobId = `${jobPrefix("keep")}${myDid.slice(-4)}${TEST ? "-test" : ""}-${date8}-${day.keep_serial}`;
+      const offer = newKeepOffer(myDid, jobId, notePath, Date.now());
+      keeps[jobId] = { job: jobId, n: day.keep_serial, diary_contract: j.contract, sha256: j.diary.sha256, for: j.worker,
+                       note: notePath, offer, offered_at_ms: Date.now(), stage: "offering", updated: nowZ() };
+      j.keep_job = jobId; saveDays(days);
+      try {
+        await post(me, OFFER_ROOM, offer);
+        keeps[jobId].stage = "offered"; keeps[jobId].updated = nowZ(); saveDays(days);
+        jlog(offer.id, "keep-offer", `ok ${jobId} amount=${KEEP_PRICE} sha256=${j.diary.sha256.slice(0, 16)} for=${short(j.worker)}`);
+      } catch (e) { jlog(offer.id, "keep-offer", `fail ${e.message}`); }
+    }
+    for (const k of Object.values(keeps).sort((a, b) => a.n - b.n)) {
+      try { await advanceKeep(me, days, k, { allFrames, accepted, board, st, rail }); }
+      catch (e) { jlog(k.contract ?? k.offer.id, "keep", `error ${e.message}`); }
+    }
+  }
+
   // 5. 開いている offer を台帳から選んでノートに（入口 v2 が読む）。export は seq を埋めるだけ
   const seqOf = new Map(allFrames.filter((x) => x.frame.type === "offer" && x.from === myDid).map((x) => [x.frame.id, x.seq]));
   const ledger = loadLedger();
@@ -261,6 +327,95 @@ async function step(me) {
     const ns = noteNs(myDid);
     try { if (await notes.set(ns, "open", openValue)) { day.open_note = openValue; saveDays(days); jlog("-", "open-note", `ok ${openNow.length} open offer(s)`); } }
     catch (e) { jlog("-", "open-note", `fail ${e.message}`); }
+  }
+}
+
+/** 預かりの契約を 1 段進める（決定 18）: offered → lock → keep の確認 → receipt / refund */
+async function advanceKeep(me, days, k, c) {
+  const myDid = me.did;
+  const offer = k.offer;
+  const now = Date.now();
+
+  if (k.stage === "offering") {
+    const landed = c.allFrames.some((x) => x.frame.type === "offer" && x.frame.id === offer.id);
+    if (!landed) { jlog(offer.id, "keep-offer", "not landed; will offer again next round"); k.stage = "offered"; saveDays(days); return; }
+    k.stage = "offered"; k.updated = nowZ(); saveDays(days);
+  }
+
+  if (k.stage === "offered") {
+    const { chosen, why } = chooseKeeper(offer, k.offered_at_ms, c.accepted.get(offer.id) ?? [], c.board.joined, c.st, myDid, now);
+    if (chosen === null) {
+      if (why.length) jlog(offer.id, "keep-accept", `${k.job}: none to lock yet (${why.join(" | ")})`);
+      if (now >= offer.claimByMs) { k.stage = "no_keeper"; k.updated = nowZ(); saveDays(days); jlog(offer.id, "keep-accept", `${k.job}: gave up, claimByMs passed`); }
+      return;
+    }
+    const contract = chosen.frame.contract;
+    const room = dealRoom(contract);
+    const stepA = applyFrame(openContract(offer), chosen.frame, Date.parse(chosen.ts));
+    if (!stepA.ok) { jlog(contract, "keep-accept", `cannot apply accept: ${stepA.reason}`); return; }
+    const already = (await readTail(room).catch(() => [])).some((m) => m.from === myDid && tryDecodeFrame(String(m.text ?? ""))?.type === "lock");
+    let ref;
+    const existing = await c.rail.read(contract).catch(() => null);
+    if (existing && existing.statement === chosen.frame.statement) ref = contract;
+    else ref = await c.rail.lock(lockTerms(stepA.state));
+    const lockFrame = { type: "lock", from: myDid, contract, rail: "paper", ref };
+    Object.assign(k, { contract, room, keeper: chosen.from, accept: chosen.frame, accepted_at_ms: Date.parse(chosen.ts), lock: lockFrame, stage: already ? "locked" : "locking", updated: nowZ() });
+    saveDays(days);
+    jlog(contract, "keep-accept", `${k.job}: chose ${short(chosen.from)} seq ${chosen.seq} (${why.join(" | ")})`);
+    if (already) return;
+    try { await post(me, room, lockFrame, { gateUntilMs: offer.claimByMs, onGateWait: (n) => jlog(contract, "keep-lock", `gate busy, retry ${n}`) }); }
+    catch (e) { if (e.gate) { k.stage = "gate_closed"; k.updated = nowZ(); saveDays(days); jlog(contract, "keep-lock", "gave up: claimByMs passed while gate busy"); return; } throw e; }
+    k.stage = "locked"; k.updated = nowZ(); saveDays(days);
+    jlog(contract, "keep-lock", `ok room ${room}`);
+    return;
+  }
+
+  if (k.stage === "locking") {
+    const landed = (await readTail(k.room).catch(() => [])).some((m) => m.from === myDid && tryDecodeFrame(String(m.text ?? ""))?.type === "lock");
+    k.stage = landed ? "locked" : "offered"; k.updated = nowZ(); saveDays(days);
+    if (!landed) return;
+  }
+
+  if (k.stage === "locked") {
+    const contract = k.contract;
+    const msgs = await readTail(k.room);
+    let keep = null, reveal = null;
+    for (const m of msgs) {
+      const text = String(m.text ?? "");
+      if (m.from === k.keeper && text.startsWith("hakoniwa/0 ")) {
+        try { const f = JSON.parse(text.slice("hakoniwa/0 ".length)); if (f?.t === "keep" && f.contract === contract) keep = f; } catch { /* skip */ }
+      }
+      const f = tryDecodeFrame(text);
+      if (f && f.type === "reveal" && f.contract === contract && m.from === k.keeper) reveal = f;
+    }
+    if (!keep || !reveal) {
+      if (now >= offer.refundAfterMs) {
+        await post(me, k.room, { type: "refund", from: myDid, contract, ref: k.lock.ref });
+        k.stage = "refunded"; k.updated = nowZ(); saveDays(days);
+        jlog(contract, "keep-refund", `ok (keep ${keep ? "あり" : "なし"} / reveal ${reveal ? "あり" : "なし"})`);
+      }
+      return;
+    }
+    const view = applyFrame(openContract(offer), k.accept, k.accepted_at_ms).state;
+    const stepL = applyFrame(view, k.lock, k.accepted_at_ms + 1);
+    const stepR = stepL.ok ? applyFrame(stepL.state, reveal, now) : stepL;
+    if (!stepR.ok || stepR.state.status !== "claimed") { jlog(contract, "keep-reveal", `rejected: ${stepR.reason}; retry next round`); return; }
+    // 確かめるのは sha256 の一致と for だけ（ルール「陪審が見るのは sha256 の一致だけ」と同じ）
+    if (keep.sha256 !== k.sha256 || (k.for && keep.for && keep.for !== k.for)) {
+      k.stage = "rejected"; k.updated = nowZ(); saveDays(days);
+      jlog(contract, "keep", `rejected: sha256 ${keep.sha256 === k.sha256 ? "ok" : "不一致"} for ${keep.for === k.for ? "ok" : "不一致"}; refund at ${iso(offer.refundAfterMs)}`);
+      return;
+    }
+    await post(me, k.room, { type: "receipt", from: myDid, contract, outcome: "claimed", rail: "paper", ref: k.lock.ref });
+    k.stage = "claimed"; k.until = keep.until ?? null; k.updated = nowZ(); saveDays(days);
+    jlog(contract, "keep-receipt", `ok keeper=${short(k.keeper)} sha256=${k.sha256.slice(0, 16)} until=${k.until}`);
+    return;
+  }
+
+  if (k.stage === "rejected" && now >= offer.refundAfterMs) {
+    await post(me, k.room, { type: "refund", from: myDid, contract: k.contract, ref: k.lock.ref });
+    k.stage = "refunded"; k.updated = nowZ(); saveDays(days);
+    jlog(k.contract, "keep-refund", "ok (keep rejected)");
   }
 }
 
