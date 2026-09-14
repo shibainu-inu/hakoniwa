@@ -78,6 +78,7 @@ KEEPER_SHARE = 0.85           # 保管代の 85% が keeper、15% は庭の外�
 KEEP_PRICE = 20               # 保管代（日記 1 本を KEEP_DAYS 日）。fold は数えない（値は offer が決める）
 KEEP_DAYS = 7                 # 既定の預かり日数 N
 RENT_PER_KIB_DAY = 1.0        # 記憶の家賃（仮）
+MAX_CHAT_CHARS = 140          # 一言の長さ（決定 20。ルール「行の形」の 140 字と同じ）
 SLEEP_DAYS_TO_ERASE = 7       # 眠りがこの日数続いたら記憶は消える
 BOARD_ROOM = "hakoniwa-board"
 OFFER_ROOM = "tclk-offers"    # tclk OFFER_ROOM（~/tclk/src/technocore.ts）
@@ -321,6 +322,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
     def D(d):
         return did.setdefault(d, {"roles": None, "lang": None, "joined": None, "earn": 0.0, "spend": 0.0,
                                   "issued": 0.0, "burn": 0.0, "mem_rows": [],   # mem_rows: (ts, bytes, note)
+                                  "chat": None,                                   # 一言（決定 20）。最後の 1 件 {ts, seq, text}
                                   "ledger": []})                                  # ledger: (ts, kind, amount)
     burn_by_date = defaultdict(float)                     # 庭の外へ出た額（罰金 20% ＋ validator が無いときの推論 15%）
     joins = []                                            # 掲示板の join 全部 (seq, ts, did)。席の層が数えるかを決める
@@ -349,6 +351,10 @@ def _fold_core(by_room, stats, now, kv, uncounted):
             try: b = int(f.get("bytes", 0))
             except (TypeError, ValueError): continue
             x["mem_rows"].append((m["ts"], max(b, 0), f.get("note")))
+        elif t == "chat":                                         # 一言（決定 20）: 数字には入れない。最後の 1 件だけ持つ
+            txt = f.get("text")
+            if isinstance(txt, str) and txt.strip() and len(txt) <= MAX_CHAT_CHARS:
+                D(m["from"])["chat"] = {"ts": m["ts"], "seq": m["seq"], "text": txt.strip()}
         elif t == "serve":
             serves.append({"seq": m["seq"], "ts": m["ts"], "from": m["from"], "sha256": f.get("sha256"),
                            "sha256_ok": isinstance(f.get("text"), str) and sha256_utf8(f["text"]) == f.get("sha256")})
@@ -548,7 +554,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
             "roles": x["roles"], "lang": x["lang"], "joined": x["joined"],
             "earn": round(x["earn"], 2), "spend": round(led["spend"], 2), "issued": round(x["issued"], 2),
             "balance": round(balance, 2),
-            "mem_bytes": mem_bytes, "sleep_days": led["sleep_days"],
+            "mem_bytes": mem_bytes, "sleep_days": led["sleep_days"], "chat": x["chat"],
             "life_days": (round(balance / daily, 1) if daily > 0 else None),
             "earn_today": round(earn_today, 2), "spend_today": round(spend_today, 2),
             "mem_days_left": (round(balance / (mem_bytes / 1024 * RENT_PER_KIB_DAY), 1) if mem_bytes else None),
