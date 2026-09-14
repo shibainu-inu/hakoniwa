@@ -102,6 +102,66 @@ def choose(pubkey_bytes, turn_id, accept_pct=None, keep_pct=None):
     return {"action": action, "byte": byte, "cut_work": cut_work, "cut_keep": cut_keep, "p": p}
 
 
+# ── 一言（決定 20。ルール v0.13「一言」） ──
+WORDS_PATH = None   # None なら hako_rules.py と同じ場所の hako_words.json（HAKO_WORDS で変えられる）
+
+
+def _load_words():
+    import os, pathlib
+    p = pathlib.Path(WORDS_PATH or os.environ.get("HAKO_WORDS") or pathlib.Path(__file__).resolve().parent / "hako_words.json")
+    return json.loads(p.read_bytes().decode("utf-8"))
+
+
+def did_base58(did):
+    """did:key:z…… の z のあとの base58。語彙はこの文字の在庫から作る（公開鍵そのものの表記）"""
+    d = str(did)
+    i = d.find("z")
+    if not d.startswith("did:key:") or i < 0:
+        raise ValueError("not a did:key")
+    return d[i + 1:]
+
+
+def vocabulary(did, words=None):
+    """その DID の語彙（決定 20）。base58 の文字の在庫（同じ文字は出てくる回数まで、小文字に畳む）で
+    つづれる英語の語だけ。一覧の順は保つ。DID の一生ぶん変わらない"""
+    from collections import Counter
+    have = Counter(did_base58(did).lower())
+    pairs = (words or _load_words())["words"]
+    return [tuple(w) for w in pairs if not (Counter(w[0]) - have)]
+
+
+GREET_HOURS = (("morning", 5, 11), ("day", 11, 17), ("evening", 17, 22), ("night", 22, 5))
+
+
+def greet_key(hour_utc):
+    """挨拶の種類（UTC の時刻。掲示板の ts から誰でも同じものを出せる）"""
+    h = int(hour_utc) % 24
+    for key, a, b in GREET_HOURS:
+        if a <= b:
+            if a <= h < b: return key
+        elif h >= a or h < b: return key
+    return "day"
+
+
+def chat(did, turn_id, hour_utc, lang="en", words=None):
+    """一言（決定 20）: 挨拶 ＋ 自分の語彙から 2 語。語は乱数と同じ引き方で選ぶ:
+      sha256(公開鍵の base58 ‖ "|" ‖ turn_id) の 1 バイト目と 2 バイト目を語彙の長さで割った余り（同じなら次の語）"""
+    w = words or _load_words()
+    vocab = vocabulary(did, w)
+    key = greet_key(hour_utc)
+    g = w["greet"][key][lang if lang in ("en", "ja") else "en"]
+    if not vocab:
+        return {"text": g, "greet": key, "words": []}
+    h = hashlib.sha256(did_base58(did).encode("ascii") + b"|" + str(turn_id).encode("utf-8")).digest()
+    i = h[0] % len(vocab)
+    j = h[1] % len(vocab)
+    if j == i: j = (j + 1) % len(vocab)
+    picked = [vocab[i], vocab[j]] if j != i else [vocab[i]]
+    idx = 0 if lang != "ja" else 1
+    body = ("、".join(p[1] for p in picked) + "。") if lang == "ja" else (", ".join(p[idx] for p in picked) + ".")
+    return {"text": f"{g} {body}", "greet": key, "words": [p[idx] for p in picked]}
+
+
 def pubkey_from_did(did):
     """did:key:z6Mk… → Ed25519 公開鍵 32 バイト（0xed01 ＋ 32 バイトの base58btc）"""
     import base58
@@ -221,6 +281,10 @@ def main(argv):
     _load_box_pcts()
     if len(argv) >= 3 and argv[1] == "personality":
         print(json.dumps(personality(pubkey_from_did(argv[2])), ensure_ascii=False)); return 0
+    if len(argv) >= 3 and argv[1] == "vocabulary":
+        print(json.dumps([w[0] for w in vocabulary(argv[2])], ensure_ascii=False)); return 0
+    if len(argv) >= 5 and argv[1] == "chat":
+        print(json.dumps(chat(argv[2], argv[3], int(argv[4]), argv[5] if len(argv) > 5 else "en"), ensure_ascii=False)); return 0
     if len(argv) >= 4 and argv[1] == "choose":
         print(json.dumps(choose(pubkey_from_did(argv[2]), argv[3]), ensure_ascii=False)); return 0
     if len(argv) < 3 or argv[1] != "check-diary":

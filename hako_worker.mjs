@@ -57,6 +57,7 @@ const MIN_AMOUNT = Number(process.env.HAKO_WORKER_MIN ?? 0);
 const MAX_PER_ROUND = Number(process.env.HAKO_WORKER_MAX_PER_ROUND ?? 1);
 const MAX_PER_DAY = Number(process.env.HAKO_WORKER_MAX_PER_DAY ?? BOX.diaries_per_worker_day);   // 1 日に受ける日記の本数（決定 17 ②）
 const RANDOM_ON = process.env.HAKO_WORKER_RANDOM !== "0";   // 乱数（決定 19）。0 で切る（方式 C は切ってよい。ルール v0.12）
+const CHAT_ON = process.env.HAKO_WORKER_CHAT !== "0";      // 一言（決定 20）。1 日 1 回 ＋ 休んだ日にもう 1 回。0 で切る
 const INF_PRICE = String(process.env.HAKO_WORKER_INF_PRICE ?? BOX.inference_price);
 const INF_EXPIRES_MIN = Number(process.env.HAKO_WORKER_INF_EXPIRES_MIN ?? 120);
 const INF_CLAIMBY_MIN = Number(process.env.HAKO_WORKER_INF_CLAIMBY_MIN ?? 240);
@@ -80,6 +81,7 @@ function jlog(contract, stage, result) {
 }
 const CURSOR_PATH = path.join(STATE_DIR, "cursor.json");
 const JOBS_PATH = path.join(STATE_DIR, "jobs.json");
+const CHAT_PATH = path.join(STATE_DIR, "chat.json");   // 一言を出した手番（決定 20。同じ手番で二度出さない）
 const loadJobs = () => readJson(JOBS_PATH, {});
 const saveJobs = (jobs) => saveJson(JOBS_PATH, jobs, 0o600);
 function mark(jobs, contract, stage, extra) {
@@ -154,6 +156,12 @@ function ownNote(stats, did, date8, joinedEntry) {
 
 // ── 5. 依頼文（README「日記の依頼文」の型。出来事の節はまだ入れない） ──
 function numText(v) { return v === null || v === undefined ? null : (typeof v === "string" ? v : JSON.stringify(v)); }
+/** 一言（決定 20）: hako_rules.py chat <did> <手番> <UTC の時> <lang> → {text,greet,words}。取れなければ null */
+function chatLine(did, turnId, hourUtc, lang) {
+  const r = spawnSync("python3", [RULES_PY, "chat", did, String(turnId), String(hourUtc), lang === "ja" ? "ja" : "en"], { encoding: "utf8" });
+  try { return JSON.parse(String(r.stdout).trim()); } catch { return null; }
+}
+
 /** 乱数（決定 19）: hako_rules.py choose <did> <手番の識別子> → {action,byte,p}。取れなければ null（そのときは受ける） */
 function chooseAction(did, turnId) {
   const r = spawnSync("python3", [RULES_PY, "choose", did, String(turnId)], { encoding: "utf8" });
@@ -301,6 +309,25 @@ async function step(me) {
     } catch (e) { jlog(contract, "accept", `fail ${e.message}`); }
   }
   saveJson(CURSOR_PATH, next);
+
+  // 一言（決定 20）: 1 日 1 回。その日 1 件も受けなかった（休んだ）ときはもう 1 回。掲示板に出すだけで、数字には入らない
+  if (CHAT_ON) {
+    const today = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
+    const said = readJson(CHAT_PATH, {});
+    const restedToday = found.length > 0 && Object.values(jobs).filter((j) => j.date === today && !DEAD_STAGES.has(j.stage)).length === 0;
+    const turn = restedToday ? `${today}-rest` : today;
+    if (!said[turn]) {
+      const lang = board.joined.get(me.did)?.lang ?? "en";
+      const c = chatLine(me.did, turn, new Date(now).getUTCHours(), lang);
+      if (c) {
+        try {
+          await post(me, BOARD_ROOM, hakoLine({ t: "chat", text: c.text, nonce: randomBytes(8).toString("hex") }));
+          said[turn] = { at: nowZ(), text: c.text }; saveJson(CHAT_PATH, said, 0o600);
+          jlog("-", "chat", `ok ${turn} ${c.text}`);
+        } catch (e) { jlog("-", "chat", `fail ${e.message}`); }
+      }
+    }
+  }
 
   // 3'. accepting のまま残った契約: export に着地していれば accepted、失効していれば expired、それ以外は出し直し（周期ぶん空く）
   for (const [contract, j] of Object.entries(jobs)) {

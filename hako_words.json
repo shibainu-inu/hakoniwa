@@ -1,0 +1,27 @@
+{
+  "note": "chat の語彙（決定 20）。DID の base58（did:key:z のあと）の文字の在庫で作れる英語のつづりだけが、その DID の語彙になる。出すときは選ばれた言語のほう。誰でも同じ結果を出せるように、この一覧と HAKONIWA-RULES.md が正。",
+  "greet": {
+    "morning": {"en": "Good morning.", "ja": "おはよう。"},
+    "day": {"en": "Hello.", "ja": "こんにちは。"},
+    "evening": {"en": "Good evening.", "ja": "こんばんは。"},
+    "night": {"en": "Still awake.", "ja": "まだ起きている。"}
+  },
+  "words": [
+    ["hi", "やあ"], ["hello", "こんにちは"], ["day", "一日"], ["night", "夜"], ["morning", "朝"], ["evening", "夕方"],
+    ["warm", "あたたかい"], ["cool", "すずしい"], ["cold", "さむい"], ["hot", "あつい"], ["quiet", "しずか"], ["calm", "おだやか"],
+    ["rain", "雨"], ["sun", "日ざし"], ["wind", "風"], ["cloud", "雲"], ["sky", "空"], ["star", "星"], ["moon", "月"],
+    ["leaf", "葉"], ["tree", "木"], ["grass", "草"], ["water", "水"], ["stone", "石"], ["path", "小道"], ["garden", "庭"],
+    ["home", "うち"], ["house", "家"], ["seat", "席"], ["door", "戸"], ["window", "窓"], ["light", "あかり"], ["dark", "くらい"],
+    ["walk", "歩く"], ["rest", "休む"], ["work", "働く"], ["wait", "待つ"], ["wake", "起きる"], ["sleep", "眠る"], ["dream", "夢"],
+    ["think", "考える"], ["remember", "おぼえている"], ["forget", "忘れる"], ["watch", "見る"], ["listen", "聞く"], ["speak", "話す"],
+    ["meet", "会う"], ["greet", "あいさつ"], ["share", "分ける"], ["help", "手伝う"], ["give", "あげる"], ["take", "もらう"],
+    ["friend", "友だち"], ["neighbor", "となり"], ["someone", "だれか"], ["everyone", "みんな"], ["nobody", "だれも"],
+    ["today", "今日"], ["tomorrow", "明日"], ["again", "また"], ["still", "まだ"], ["soon", "もうすぐ"], ["late", "おそい"],
+    ["early", "はやい"], ["first", "はじめて"], ["last", "さいご"], ["new", "あたらしい"], ["old", "ふるい"], ["same", "おなじ"],
+    ["happy", "うれしい"], ["tired", "つかれた"], ["hungry", "おなかがすいた"], ["busy", "いそがしい"], ["slow", "ゆっくり"],
+    ["easy", "かんたん"], ["hard", "むずかしい"], ["far", "遠い"], ["near", "近い"],
+    ["paper", "かみ"], ["coin", "こぜに"], ["trade", "取引"], ["buy", "買う"], ["sell", "売る"], ["keep", "あずける"], ["lose", "なくす"],
+    ["find", "見つける"], ["count", "数える"], ["write", "書く"], ["read", "読む"], ["word", "ことば"], ["story", "話"],
+    ["small", "ちいさい"], ["big", "おおきい"], ["open", "あく"], ["close", "しまる"], ["start", "はじまる"], ["end", "おわる"]
+  ]
+}
