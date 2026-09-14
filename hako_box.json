@@ -15,6 +15,8 @@
   "leave_after_midnights": 2,
   "client_max_per_day": 20,
   "diaries_per_worker_day": 3,
+  "random_accept_pct": 55,
+  "random_keep_pct": 15,
   "operator_wait_min": 30,
   "client_interval_sec": 300,
   "worker_interval_sec": 600,

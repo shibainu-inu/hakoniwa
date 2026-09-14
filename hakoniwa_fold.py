@@ -103,7 +103,8 @@ BOX_PATH = os.environ.get("HAKO_BOX") or str(Path(__file__).resolve().parent / "
 BOX_DEFAULTS = {"box": "hakoniwa", "venue": "https://technocore.chat", "offers_room": OFFER_ROOM, "initial_paper": INITIAL,
                 "diary_price": 400, "inference_price": 240, "inference_min": 240, "graduate_at": GRADUATE_EARN, "seats": SEATS,
                 "starve_below": STARVE_BELOW, "leave_after_midnights": LEAVE_AFTER_MIDNIGHTS, "client_max_per_day": DIARY_PER_CLIENT_DAY,
-                "diaries_per_worker_day": DIARIES_PER_WORKER_DAY, "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
+                "diaries_per_worker_day": DIARIES_PER_WORKER_DAY,
+                "random_accept_pct": 55, "random_keep_pct": 15, "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
                 "validator_share": 0.15,
                 "keep_price": KEEP_PRICE, "keep_days": KEEP_DAYS, "keep_burn_share": round(1.0 - KEEPER_SHARE, 6),
                 "operators": list(OPERATOR_DIDS)}
@@ -140,6 +141,7 @@ def apply_box(cfg):
     LEAVE_AFTER_MIDNIGHTS = int(cfg["leave_after_midnights"]); DIARY_PER_CLIENT_DAY = int(cfg["client_max_per_day"])
     DIARIES_PER_WORKER_DAY = int(cfg["diaries_per_worker_day"])
     hako_rules.NOTE_NS_PREFIX = f"{cfg['box']}-"
+    hako_rules.ACCEPT_PCT = int(cfg["random_accept_pct"]); hako_rules.KEEP_PCT = int(cfg["random_keep_pct"])   # 乱数の確率（決定 19）
     return cfg
 
 

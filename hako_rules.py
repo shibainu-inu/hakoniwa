@@ -36,6 +36,7 @@ ok は True（5 つ全部通過）/ False（1 つでも不合格）/ None（不�
 reason は不合格・未判定の条件を "N:理由" で列挙（空文字なら全部通過）。
 漢数字は数字として扱わない（ルールの限界）。小数点・カンマ・符号は数字の並びを区切る文字として扱う（"1,051" は "1" と "051"）。
 """
+import hashlib
 import json
 import re
 import sys
@@ -72,6 +73,33 @@ def personality(pubkey_bytes):
             elif v < 0: out.append(table[key][1])
         words[lang] = out
     return {"work": work, "keep": keep, "words": words}
+
+
+# 乱数（決定 19。ルール v0.12「乱数で揺れるのは…」）。既定は hako_box.json の random_accept_pct / random_keep_pct
+ACCEPT_PCT, KEEP_PCT = 55, 15
+
+
+def probabilities(pubkey_bytes, accept_pct=None, keep_pct=None):
+    """公開鍵 → 3 つの確率（%）。性格のポイントを「受ける」「憶える」に足し、同じ分を「休む」で打ち消す（合計 100）"""
+    pe = personality(pubkey_bytes)
+    work = (ACCEPT_PCT if accept_pct is None else int(accept_pct)) + pe["work"]
+    keep = (KEEP_PCT if keep_pct is None else int(keep_pct)) + pe["keep"]
+    return {"work": work, "keep": keep, "rest": 100 - work - keep}
+
+
+def choose(pubkey_bytes, turn_id, accept_pct=None, keep_pct=None):
+    """その手番の行動を決める（決定 19）。誰でも同じ結果を出せる:
+      seed = sha256(公開鍵 32 バイト ‖ b"|" ‖ turn_id の UTF-8) の先頭バイト（0〜255）
+      しきい値 = 確率 × 256 // 100 を「受ける」「憶える」の順に積む。残り（端数を含む）が「休む」
+    turn_id は手番の識別子。受けるなら日記 offer の id、憶えるなら預かりの job.id。
+    掲示板の seq は入れない: 同じ offer に何度も引き直せてしまい「休む」が効かなくなるため"""
+    b = bytes(pubkey_bytes)
+    p = probabilities(b, accept_pct, keep_pct)
+    byte = hashlib.sha256(b + b"|" + str(turn_id).encode("utf-8")).digest()[0]
+    cut_work = p["work"] * 256 // 100
+    cut_keep = cut_work + p["keep"] * 256 // 100
+    action = "work" if byte < cut_work else ("keep" if byte < cut_keep else "rest")
+    return {"action": action, "byte": byte, "cut_work": cut_work, "cut_keep": cut_keep, "p": p}
 
 
 def pubkey_from_did(did):
@@ -177,9 +205,24 @@ def check_diary_detail(diary_frame, context_values, client_did, date_yyyymmdd, w
     return True, "", checks
 
 
+def _load_box_pcts():
+    """CLI から呼ばれたとき、同じ場所の hako_box.json（HAKO_BOX で変えられる）の確率を使う（決定 16 と 19）"""
+    global ACCEPT_PCT, KEEP_PCT
+    import os, pathlib
+    p = pathlib.Path(os.environ.get("HAKO_BOX") or pathlib.Path(__file__).resolve().parent / "hako_box.json")
+    try:
+        cfg = json.loads(p.read_bytes().decode("utf-8"))
+        ACCEPT_PCT = int(cfg.get("random_accept_pct", ACCEPT_PCT)); KEEP_PCT = int(cfg.get("random_keep_pct", KEEP_PCT))
+    except Exception:
+        pass
+
+
 def main(argv):
+    _load_box_pcts()
     if len(argv) >= 3 and argv[1] == "personality":
         print(json.dumps(personality(pubkey_from_did(argv[2])), ensure_ascii=False)); return 0
+    if len(argv) >= 4 and argv[1] == "choose":
+        print(json.dumps(choose(pubkey_from_did(argv[2]), argv[3]), ensure_ascii=False)); return 0
     if len(argv) < 3 or argv[1] != "check-diary":
         print(__doc__); return 2
     raw = sys.stdin.read() if argv[2] == "-" else argv[2]

@@ -56,6 +56,7 @@ const INTERVAL_SEC = Number(process.env.HAKO_WORKER_INTERVAL_SEC ?? BOX.worker_i
 const MIN_AMOUNT = Number(process.env.HAKO_WORKER_MIN ?? 0);
 const MAX_PER_ROUND = Number(process.env.HAKO_WORKER_MAX_PER_ROUND ?? 1);
 const MAX_PER_DAY = Number(process.env.HAKO_WORKER_MAX_PER_DAY ?? BOX.diaries_per_worker_day);   // 1 日に受ける日記の本数（決定 17 ②）
+const RANDOM_ON = process.env.HAKO_WORKER_RANDOM !== "0";   // 乱数（決定 19）。0 で切る（方式 C は切ってよい。ルール v0.12）
 const INF_PRICE = String(process.env.HAKO_WORKER_INF_PRICE ?? BOX.inference_price);
 const INF_EXPIRES_MIN = Number(process.env.HAKO_WORKER_INF_EXPIRES_MIN ?? 120);
 const INF_CLAIMBY_MIN = Number(process.env.HAKO_WORKER_INF_CLAIMBY_MIN ?? 240);
@@ -153,6 +154,12 @@ function ownNote(stats, did, date8, joinedEntry) {
 
 // ── 5. 依頼文（README「日記の依頼文」の型。出来事の節はまだ入れない） ──
 function numText(v) { return v === null || v === undefined ? null : (typeof v === "string" ? v : JSON.stringify(v)); }
+/** 乱数（決定 19）: hako_rules.py choose <did> <手番の識別子> → {action,byte,p}。取れなければ null（そのときは受ける） */
+function chooseAction(did, turnId) {
+  const r = spawnSync("python3", [RULES_PY, "choose", did, String(turnId)], { encoding: "utf8" });
+  try { return JSON.parse(String(r.stdout).trim()); } catch { return null; }
+}
+
 function personalityWords(did, lang) {
   // hako_rules.py personality <did>（決定 13）。取れなければ行を入れない
   const r = spawnSync("python3", [RULES_PY, "personality", did], { encoding: "utf8" });
@@ -258,6 +265,14 @@ async function step(me) {
   const diaryOffers = freshFrames.filter((x) => x.frame.type === "offer" && String(x.frame.job?.id ?? "").startsWith(JOB_PREFIX)).length;
   jlog("-", "round", `gen ${exp.generation} rows ${exp.rows.length} new ${fresh.length} last_seq ${next.last_seq} ${JOB_PREFIX}* offers ${diaryOffers} candidates ${found.length} joined ${board.joined.size} (board bad_sig ${board.stats.bad_sig})${stats ? ` stats ${stats.box?.generated} operators ${operators.size}` : ` stats missing (${STATS})`}`);
   for (const { ts, offer } of found.slice(0, MAX_PER_ROUND)) {
+    if (RANDOM_ON) {                                   // 決定 19: 手番は offer の id。同じ offer では何度引いても同じ結果
+      const c = chooseAction(me.did, offer.id);
+      if (c && c.action !== "work") {
+        jlog(offer.id, "random", `${c.action}（今日は受けない） byte=${c.byte} p=受ける ${c.p.work}% 憶える ${c.p.keep}% 休む ${c.p.rest}% job=${offer.job.id}`);
+        continue;
+      }
+      if (c) jlog(offer.id, "random", `work（受ける） byte=${c.byte} p=受ける ${c.p.work}% 休む ${c.p.rest}%`);
+    }
     const date8 = String(ts).slice(0, 10).replace(/-/g, "");
     const own = ownNote(stats, me.did, date8, board.joined.get(me.did));
     const notePath = contextPath(me.did, "diary", date8);

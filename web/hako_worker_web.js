@@ -12,7 +12,7 @@ import * as tclk from "./hako_tclk.js";
 
 export const VENUE = "https://technocore.chat";
 // 箱の設定（決定 16 ②）: 既定は hakoniwa。サイトの latest.json の box.config（hako_box.json の写し）で上書きする（applyBox）
-export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240", diaries_per_worker_day: 3 };
+export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240", diaries_per_worker_day: 3, random_accept_pct: 55, random_keep_pct: 15 };
 export function applyBox(cfg) {
   if (!cfg || typeof cfg !== "object") return box;
   if (typeof cfg.box === "string" && cfg.box) box.name = cfg.box;
@@ -22,6 +22,10 @@ export function applyBox(cfg) {
   if (v.inference_price !== undefined && v.inference_price !== null) box.inference_price = String(v.inference_price);
   const n = Number(v.diaries_per_worker_day);
   if (Number.isInteger(n) && n >= 1) box.diaries_per_worker_day = n;   // 1 日に閉じる日記の本数（決定 17 ②）
+  for (const k of ["random_accept_pct", "random_keep_pct"]) {   // 乱数の確率（決定 19）
+    const m = Number(v[k]);
+    if (Number.isInteger(m) && m >= 0 && m <= 100) box[k] = m;
+  }
   return box;
 }
 const STATE_KEY = "hako_work_v1";
@@ -31,6 +35,7 @@ const INF_RETRIES = 2;
 const LOCK_WAIT_MIN = 20;                      // client の lock を待つ上限（client は 5 分周期。運営 worker を待たせる 30 分より短くてよい: 参加者が先）
 const GATE_MS = 30_000;
 const TICK_MS = 30_000;
+const RANDOM_ON = true;                        // 乱数（決定 19）。方式 A（ブラウザ）は既定で入れる
 const MAX_CHARS = 140;
 const NUM_KEYS = ["earn", "spend", "balance", "mem_bytes", "life_days"];
 const FRESH = { earn: 0, spend: 0, balance: 1000, mem_bytes: 0, life_days: null };
@@ -162,6 +167,24 @@ export function personalityWords(did, lang) {
   if (keep > 0) w.push(lang === "ja" ? "思い出を残したがる" : "keeps memories"); else if (keep < 0) w.push(lang === "ja" ? "忘れっぽい" : "forgetful");
   return w;
 }
+/** 乱数の確率（決定 19。hako_rules.py probabilities の写し）: 性格のポイントを足し、同じ分を「休む」で打ち消す */
+export function probabilities(did) {
+  const b = pubOfDid(did);
+  const work = box.random_accept_pct + ((b[2] % 16) - 8);
+  const keep = box.random_keep_pct + ((b[3] % 16) - 8);
+  return { work, keep, rest: 100 - work - keep };
+}
+/** その手番の行動（決定 19。hako_rules.py choose の写し）: seed = sha256(公開鍵 32 バイト ‖ "|" ‖ 手番の識別子) の先頭バイト */
+export async function chooseAction(did, turnId) {
+  const pub = pubOfDid(did), t = enc.encode(String(turnId));
+  const buf = new Uint8Array(pub.length + 1 + t.length);
+  buf.set(pub, 0); buf.set([0x7c], pub.length); buf.set(t, pub.length + 1);
+  const byte = new Uint8Array(await crypto.subtle.digest("SHA-256", buf))[0];
+  const p = probabilities(did);
+  const cutWork = Math.floor(p.work * 256 / 100);
+  const cutKeep = cutWork + Math.floor(p.keep * 256 / 100);
+  return { action: byte < cutWork ? "work" : (byte < cutKeep ? "keep" : "rest"), byte, cutWork, cutKeep, p };
+}
 const numText = (v) => (v === null || v === undefined ? null : (typeof v === "string" ? v : JSON.stringify(v)));
 // 今日のできごと（依頼文の「動作報告」の材料。DID の表示は数字を含むので入れない。数字は本文に出さないよう言葉で）
 const TODAY_EVENTS = {
@@ -280,6 +303,15 @@ export class Worker {
         const cands = (await this.openOffers(stats)).filter((o) => !tried.has(o.frame.id) && o.frame.from !== me);
         if (!cands.length) { this.log("offer", "開いている日記 offer が無い（client は 5 分ごとに出す）"); return; }
         const pick = cands[0];
+        if (RANDOM_ON) {                                 // 決定 19: 手番は offer の id。同じ offer なら何度でも同じ結果
+          const c = await chooseAction(me, pick.frame.id);
+          if (c.action !== "work") {
+            this.log("random", `${c.action === "rest" ? "休む" : "憶える"}（この仕事は受けない） byte=${c.byte} 受ける ${c.p.work}% 休む ${c.p.rest}%`);
+            this.set("idle", { tried: [...tried, pick.frame.id] });
+            return;
+          }
+          this.log("random", `受ける byte=${c.byte} 受ける ${c.p.work}% 休む ${c.p.rest}%`);
+        }
         const d = stats?.did?.[me];
         const src = d ?? FRESH;
         const int = (v) => (v === null || v === undefined ? null : Math.round(Number(v)));
