@@ -496,6 +496,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         settled = d["settled"] or d["refund"]
         contracts.append({
             "contract": d["contract"], "kind": d["kind"], "payer": d["payer"], "payee": d["payee"], "room": d["room"],
+            "amount": float(d["amount"]),          # 契約の額（決定 21: つながりの線の重み）
             "locked_seq": d["lock"]["seq"], "locked_ts": _unix(d["lock"]["ts"]),
             "settled_seq": settled["seq"] if settled else None, "settled_ts": _unix(settled["ts"]) if settled else None,
             "outcome": "receipt" if d["settled"] else ("refunded" if d["refund"] else None),
