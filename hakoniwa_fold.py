@@ -214,6 +214,30 @@ def load_dir(root):
                 out.append((d.name, gen, m))
     return out
 
+def iter_dir(root, offer_room=None):
+    """load_dir と同じものを、リストにせず 1 行ずつ返す（決定 22）。
+    並びは (部屋, generation, seq)。部屋はディレクトリ名の順、ファイルは名前の順、行はファイルの中の順で、
+    2026-09-15 の実測ではこれが (gen, seq) の昇順と一致する（tclk-offers 281 万行で逆転 0 件）。
+    fold は受け取りながら並びを確かめ、逆転していれば全部を読み直して並べ替える（安全側）"""
+    root = Path(root).expanduser()
+    for d in sorted(p for p in root.iterdir() if p.is_dir() and p.name != KV_DIR):
+        gen_default = 0
+        cur = d / "cursor.json"
+        if cur.exists():
+            try: gen_default = int(json.load(open(cur)).get("generation") or 0)
+            except (ValueError, TypeError, json.JSONDecodeError): gen_default = 0
+        for p in sorted(d.glob("*.jsonl")):
+            mg = _GEN_FILE.match(p.name)
+            gen = int(mg.group(1)) if mg else gen_default
+            for line in open(p, encoding="utf-8"):
+                line = line.strip()
+                if not line: continue
+                try: m = json.loads(line)
+                except json.JSONDecodeError: continue
+                if not isinstance(m, dict) or not all(k in m for k in ("seq", "ts", "from", "text")): continue
+                yield (d.name, gen, m)
+
+
 def load_gaps(root):
     """→ [{"room","from_seq","to_seq","at"}]。hako_export.py が <room>/gaps.jsonl に残した取りこぼし（無ければ空）。
     box.export_gaps にそのまま写す。数字の補正はしない（取れなかった行は数えられない、と分かるようにするだけ）"""
@@ -286,11 +310,20 @@ def fold(entries, now=None, kv=None, gaps=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     kv = kv or {}
     parse_stats = {"rows": 0, "dup": 0, "unsigned": 0, "bad_sig": 0, "frames": 0}
+    if not isinstance(entries, list) and not hasattr(entries, "__len__"):
+        src = entries                                   # iter_dir()。並びは合っている前提で流す（下で確かめる）
+    else:
+        src = sorted(entries, key=lambda e: (e[0], e[1], int(e[2]["seq"])))
     seen = set()
     by_room = {}
-    for room, gen, m in sorted(entries, key=lambda e: (e[0], e[1], int(e[2]["seq"]))):
+    our_offers = set()                                  # 決定 22: 自分の箱の offer の id。accept はこれを ref で指す
+    last_key = None
+    for room, gen, m in src:
         parse_stats["rows"] += 1
         key = (room, gen, int(m["seq"]))
+        if last_key is not None and key < last_key:     # 並びが逆転したら数え方が変わる。気づけるように残す
+            raise ValueError(f"fold: 行の並びが逆転しています {last_key} -> {key}。load_dir() で読み直してください")
+        last_key = key
         if key in seen: parse_stats["dup"] += 1; continue
         seen.add(key)
         if not str(m["from"]).startswith("did:key:") or "sig" not in m or "nonce" not in m:
@@ -299,6 +332,17 @@ def fold(entries, now=None, kv=None, gaps=None):
         pf = parse_frame(m["text"])
         if not pf: continue
         parse_stats["frames"] += 1
+        if room == OFFER_ROOM:                          # 決定 22: 共用の部屋は要る行だけ持つ（数えるのは全行）
+            f = pf[1]
+            ty = f.get("type") if pf[0] == "tclk" else None
+            if ty == "offer":
+                job = f.get("job")
+                if not (isinstance(job, dict) and str(job.get("id", "")).startswith(JOB_PREFIX)): continue
+                if isinstance(f.get("id"), str): our_offers.add(f["id"])
+            elif ty == "accept":
+                if f.get("ref") not in our_offers: continue
+            else:
+                continue
         by_room.setdefault(room, []).append((m, pf))
     uncounted = set()
     for _ in range(SEAT_ITERATIONS):
@@ -744,6 +788,12 @@ def print_text(res):
           f"offers {s['offers']}  accepts {s['accepts']}  receipts {box['receipts']}")
     print(f"rules {box['rules']}")
     c = box.get("config") or {}
+    try:                                            # 決定 22 ③: 読んだ量と使ったメモリ（増え方が log で見えるように）
+        import resource
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        print(f"read {box['stats']['rows']:,} rows  peak memory {rss:,.0f} MiB")
+    except Exception:
+        pass
     print(f"box {c.get('box')}  config sha256 {str(c.get('sha256'))[:12]}  rules config {str(c.get('rules_config_sha256'))[:12]} match {c.get('match')}  seats {c.get('values', {}).get('seats')}  graduate_at {c.get('values', {}).get('graduate_at')}  validator_share {c.get('values', {}).get('validator_share')}")
     print(f"PAPER in box {box['paper_total']}  burned {box['burned']}  graduated {box['graduated_paper']}  "
           f"seats {box['seats']['taken']}/{box['seats']['capacity']}  exits {box['exits']}  validator {str(box['validator'])[-4:]}")
@@ -783,8 +833,13 @@ def main(argv):
         else: paths.append(a)
     if not dir_ and not paths:
         print(__doc__); return 2
-    entries = load_dir(dir_) if dir_ else []
-    entries += load_files(paths, rooms)
+    # 決定 22: --dir は流し読み（リストにしない）。--dir と個々のファイルを混ぜたときだけ、今までどおりリストにして並べ替える
+    if dir_ and not paths:
+        entries = iter_dir(dir_)
+    elif dir_:
+        entries = load_dir(dir_) + load_files(paths, rooms)
+    else:
+        entries = load_files(paths, rooms)
     res = fold(entries, kv=load_kv(dir_) if dir_ else None, gaps=load_gaps(dir_) if dir_ else None)
     if out_dir: write_out(res, out_dir)
     if as_json: print(json.dumps(res, ensure_ascii=False, indent=1))
