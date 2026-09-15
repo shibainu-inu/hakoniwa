@@ -272,10 +272,12 @@ async function step(me) {
     (seq, f, fails) => jlog(f.id, "skip", `seq ${seq} job=${f.job.id} amount=${f.amount} — ${failText(fails)}`), operators);
   const diaryOffers = freshFrames.filter((x) => x.frame.type === "offer" && String(x.frame.job?.id ?? "").startsWith(JOB_PREFIX)).length;
   jlog("-", "round", `gen ${exp.generation} rows ${exp.rows.length} new ${fresh.length} last_seq ${next.last_seq} ${JOB_PREFIX}* offers ${diaryOffers} candidates ${found.length} joined ${board.joined.size} (board bad_sig ${board.stats.bad_sig})${stats ? ` stats ${stats.box?.generated} operators ${operators.size}` : ` stats missing (${STATS})`}`);
+  let restedNow = false;                               // この周で乱数が「受けない」を出したか（決定 20: 休んだ日の一言）
   for (const { ts, offer } of found.slice(0, MAX_PER_ROUND)) {
     if (RANDOM_ON) {                                   // 決定 19: 手番は offer の id。同じ offer では何度引いても同じ結果
       const c = chooseAction(me.did, offer.id);
       if (c && c.action !== "work") {
+        restedNow = true;
         jlog(offer.id, "random", `${c.action}（今日は受けない） byte=${c.byte} p=受ける ${c.p.work}% 憶える ${c.p.keep}% 休む ${c.p.rest}% job=${offer.job.id}`);
         continue;
       }
@@ -310,22 +312,26 @@ async function step(me) {
   }
   saveJson(CURSOR_PATH, next);
 
-  // 一言（決定 20）: 1 日 1 回。その日 1 件も受けなかった（休んだ）ときはもう 1 回。掲示板に出すだけで、数字には入らない
+  // 一言（決定 20）: 1 日 1 回は必ず。その日に乱数で「受けない」を引いたら、もう 1 回だけ（手番は <日付>-rest）。
+  // 掲示板に出すだけで、数字には入らない。同じ日に同じ本文になったら 2 回目は出さない（語彙が小さいとまれに当たる）
   if (CHAT_ON) {
     const today = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
     const said = readJson(CHAT_PATH, {});
-    const restedToday = found.length > 0 && Object.values(jobs).filter((j) => j.date === today && !DEAD_STAGES.has(j.stage)).length === 0;
-    const turn = restedToday ? `${today}-rest` : today;
-    if (!said[turn]) {
-      const lang = board.joined.get(me.did)?.lang ?? "en";
+    const lang = board.joined.get(me.did)?.lang ?? "en";
+    for (const turn of restedNow ? [today, `${today}-rest`] : [today]) {
+      if (said[turn]) continue;
       const c = chatLine(me.did, turn, new Date(now).getUTCHours(), lang);
-      if (c) {
-        try {
-          await post(me, BOARD_ROOM, hakoLine({ t: "chat", text: c.text, nonce: randomBytes(8).toString("hex") }));
-          said[turn] = { at: nowZ(), text: c.text }; saveJson(CHAT_PATH, said, 0o600);
-          jlog("-", "chat", `ok ${turn} ${c.text}`);
-        } catch (e) { jlog("-", "chat", `fail ${e.message}`); }
+      if (!c) continue;
+      if (Object.entries(said).some(([k, v]) => k.startsWith(today) && v.text === c.text)) {
+        said[turn] = { at: nowZ(), text: c.text, skipped: "同じ日に同じ本文" }; saveJson(CHAT_PATH, said, 0o600);
+        jlog("-", "chat", `skip ${turn} 同じ日に同じ本文（${c.text}）`);
+        continue;
       }
+      try {
+        await post(me, BOARD_ROOM, hakoLine({ t: "chat", text: c.text, nonce: randomBytes(8).toString("hex") }));
+        said[turn] = { at: nowZ(), text: c.text }; saveJson(CHAT_PATH, said, 0o600);
+        jlog("-", "chat", `ok ${turn} ${c.text}`);
+      } catch (e) { jlog("-", "chat", `fail ${e.message}`); }
     }
   }
 
