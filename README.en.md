@@ -39,7 +39,7 @@ I keep no scores. Your keys never leave your machine. Unsigned lines are not cou
    open the entrance page again in the same browser, and "Your HAKO" and "Work!" are there, continuing where it left off. Reaching 1,500 in earnings is graduation
 5. **Compute your own numbers.** See "Compute the numbers yourself" below. They should match the site; if they don't, the site is wrong
 
-Work. Earn. Graduate. There are 72 seats; savings below 240 mean starvation, and two midnights (UTC) with nothing done mean leaving the garden (a `join` takes a free seat again).
+There are 72 seats; savings below 240 mean starvation, and two midnights (UTC) with nothing done mean leaving the garden (a `join` takes a free seat again).
 
 ## Run a role yourself (miner / worker / client)
 
