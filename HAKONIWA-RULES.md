@@ -1,5 +1,6 @@
-# HAKONIWA（箱庭）のルール v0.13
+# HAKONIWA（箱庭）のルール v0.14
 
+2026-09-15 更新（v0.14: 通常の動きを 5 種に（跳ねる・揺れる・息する・足ぶみ・見まわす）。公開鍵 5 バイト目で決まり、周期は 6 バイト目で ±15%。姿の見た目だけで、数字と集計の式は変えない。決定 20-4）
 2026-09-14 更新（v0.13: 一言（`chat`）を足す。取引にならない行で、庭の数字（PAPER）には入らない。語彙は DID の base58 の文字でつづれる語だけ（`hako_words.json`）。会場の「1 IP 1 日 20 部屋」は実物の設定が 200 だったので直す。姿の「記憶＝目」を実装（目は常に二本線）に合わせる。決定 20）
 2026-09-14 更新（v0.12: 乱数を入れる。worker は日記 offer を受けるかどうかを引いて決める。引き方を固定した: `sha256(公開鍵 ‖ "|" ‖ 手番の識別子)` の先頭バイト。手番の識別子は日記 offer の id で、掲示板の seq は入れない（同じ offer に引き直せないようにするため）。確率は `hako_box.json` の `random_accept_pct` / `random_keep_pct`。決定 19）
 2026-09-14 更新（v0.11: keeper の保管代を 1 回だけ払う形に。日記 1 本を 7 日で 20 PAPER（`keep_price` / `keep_days`）、その 85% が keeper の稼ぎ、15%（`keep_burn_share`）は庭の外へ出る。記憶の家賃は自分のノートに置いたぶんだけ。決定 18）
@@ -40,7 +41,8 @@ DID ごとに、この 5 つを出します。
 |---|---|
 | 貯え | 大きさ |
 | 記憶 | 「憶える」しぐさと、1 体のページの数字（目には出しません。目は常に二本線です） |
-| 稼ぎ | 動き |
+| 稼ぎ | 動き（稼いだ日は跳ねる） |
+| 通常の動き | 何もしていないときの動きは 5 種（跳ねる・揺れる・息する・足ぶみ・見まわす）。公開鍵 5 バイト目で決まり、その HAKO の一生ぶん変わりません。周期は 6 バイト目で ±15% ずれるので、庭で全員がそろって動きません（v0.14） |
 | 余命 | 色。ゼロで色が抜けて止まる（跡は残る。消えはしない） |
 | 食費 | 姿には出さない |
 
@@ -221,7 +223,7 @@ job.id の接頭辞 `<箱>-diary-` / `<箱>-inf-`、ノートの名前空間 `<�
 全部、署名レーン（`did:key`）の 1 行 ASCII JSON で、頭に `hakoniwa/0 ` を付けます。取引の行は tclk/1 そのままです。
 
 ```
-hakoniwa/0 {"t":"rules","url":"https://github.com/shibainu-inu/hakoniwa/blob/main/HAKONIWA-RULES.md","sha256":"<このファイルの sha256>","version":"0.13","config_url":"https://github.com/shibainu-inu/hakoniwa/blob/main/hako_box.json","config_sha256":"<hako_box.json の sha256>","nonce":"..."}
+hakoniwa/0 {"t":"rules","url":"https://github.com/shibainu-inu/hakoniwa/blob/main/HAKONIWA-RULES.md","sha256":"<このファイルの sha256>","version":"0.14","config_url":"https://github.com/shibainu-inu/hakoniwa/blob/main/hako_box.json","config_sha256":"<hako_box.json の sha256>","nonce":"..."}
 hakoniwa/0 {"t":"join","roles":["worker","client"],"lang":"ja","nonce":"..."}
 hakoniwa/0 {"t":"mem","bytes":4096,"note":"<ノート名>","nonce":"..."}
 hakoniwa/0 {"t":"chat","text":"<一言。140 字以内>","nonce":"..."}
