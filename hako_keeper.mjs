@@ -129,7 +129,10 @@ async function serveRecalls(me, keeps) {
   try { exp = await fetchExport(BOARD_ROOM); } catch (e) { jlog("-", "recall", `board export ${e.message}`); return; }
   const { fresh, next } = splitNew(cur, exp.generation, exp.rows, BOARD_ROOM);
   const have = new Map();
-  for (const k of Object.values(keeps)) if (k.sha256 && (k.stage === "revealed" || k.stage === "kept")) have.set(k.sha256, k);
+  for (const k of Object.values(keeps)) {
+    if (k.stage !== "revealed" && k.stage !== "kept") continue;
+    for (const v of (Array.isArray(k.volumes) ? k.volumes : (k.sha256 ? [{ sha256: k.sha256 }] : []))) have.set(v.sha256, k);
+  }
   for (const m of fresh) {
     const t = String(m.text ?? "");
     if (!t.startsWith("hakoniwa/0 ")) continue;
@@ -223,30 +226,43 @@ async function step(me) {
         jlog(contract, "lock", `ok ref=${lock.ref.slice(0, 18)}`);
       }
       if (k.stage === "locked") {
-        // 5. 依頼のノート: 1 行 JSON {"sha256","text","for","date"}。sha256 が本文と合わなければ預からない
+        // 5. 依頼のノート。2 つの形を読む（決定 34-2）:
+        //    1 冊    {"sha256","text","for","date"}
+        //    棚ごと  {"volumes":[{"sha256","text","for","date"}, …]}   1 契約で棚ぜんぶ
+        //    どの冊も sha256 が本文と合わなければ、その契約は預からない（1 冊でも合わなければ全部やめる）
         if (Date.now() >= k.refundAfterMs) { mark(keeps, contract, "late"); jlog(contract, "body", "gave up: refundAfterMs passed"); continue; }
         const m = String(k.context).match(/^\/kv\/([^/]+)\/([^/]+)$/);
         const raw = m ? await notes.get(m[1], m[2]) : null;
         if (raw === null) { jlog(contract, "body", `ノートが読めない ${k.context}; retry next round`); continue; }
         let body; try { body = JSON.parse(raw); } catch { mark(keeps, contract, "no_body"); jlog(contract, "body", "ノートが JSON でない。預からない"); continue; }
-        if (typeof body.text !== "string" || sha256Utf8(body.text) !== body.sha256) {
+        const vols = Array.isArray(body.volumes) ? body.volumes : [body];
+        if (!vols.length) { mark(keeps, contract, "no_body"); jlog(contract, "body", "冊が 1 つも無い。預からない"); continue; }
+        const bad = vols.find((v) => !v || typeof v.text !== "string" || sha256Utf8(v.text) !== v.sha256);
+        if (bad) {
           mark(keeps, contract, "no_body"); jlog(contract, "body", "sha256 が本文と合わない。預からない"); continue;
         }
         // 6. 本体は自分の保管に。ノートには入れない
         const until = new Date(Date.now() + KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
-        mkdirSync(path.dirname(bodyPath(body.sha256)), { recursive: true, mode: 0o700 });
-        writeFileSync(bodyPath(body.sha256), JSON.stringify({ sha256: body.sha256, text: body.text, for: body.for ?? null, date: body.date ?? null, contract, until, kept_at: nowZ() }, null, 1), { mode: 0o600 });
-        mark(keeps, contract, "kept", { sha256: body.sha256, for: body.for ?? null, until });
-        jlog(contract, "body", `ok sha256=${body.sha256.slice(0, 16)} for=${short(body.for ?? "")} until=${until}`);
+        for (const v of vols) {
+          mkdirSync(path.dirname(bodyPath(v.sha256)), { recursive: true, mode: 0o700 });
+          writeFileSync(bodyPath(v.sha256), JSON.stringify({ sha256: v.sha256, text: v.text, for: v.for ?? null, date: v.date ?? null, contract, until, kept_at: nowZ() }, null, 1), { mode: 0o600 });
+        }
+        const kept = vols.map((v) => ({ sha256: v.sha256, for: v.for ?? null }));
+        mark(keeps, contract, "kept", { sha256: kept[0].sha256, for: kept[0].for, until, volumes: kept });
+        jlog(contract, "body", `ok ${kept.length} 冊 until=${until} 先頭 sha256=${kept[0].sha256.slice(0, 16)}`);
         await writeIndex(me, keeps);
       }
       if (k.stage === "kept") {
         // 7. keep の納品
         if (Date.now() >= k.refundAfterMs) { mark(keeps, contract, "late"); jlog(contract, "keep", "gave up: refundAfterMs passed"); continue; }
-        const line = hakoLine({ t: "keep", contract, sha256: k.sha256, for: k.for, until: k.until, how: `recall on /r/${BOARD_ROOM}`, nonce: randomBytes(8).toString("hex") });
+        // 棚ごとの契約なら volumes を並べる。1 冊なら前の形のまま（決定 34-2）
+        const many = Array.isArray(k.volumes) && k.volumes.length > 1;
+        const line = hakoLine(many
+          ? { t: "keep", contract, volumes: k.volumes, until: k.until, how: `recall on /r/${BOARD_ROOM}`, nonce: randomBytes(8).toString("hex") }
+          : { t: "keep", contract, sha256: k.sha256, for: k.for, until: k.until, how: `recall on /r/${BOARD_ROOM}`, nonce: randomBytes(8).toString("hex") });
         await post(me, k.room, line, { gateUntilMs: k.claimByMs, onGateWait: (n) => jlog(contract, "keep", `gate busy, retry ${n}`) });
         mark(keeps, contract, "delivered");
-        jlog(contract, "keep", `ok sha256=${k.sha256.slice(0, 16)} until=${k.until}`);
+        jlog(contract, "keep", `ok ${many ? `${k.volumes.length} 冊` : `sha256=${k.sha256.slice(0, 16)}`} until=${k.until}`);
       }
       if (k.stage === "delivered") {
         if (Date.now() >= k.refundAfterMs) { mark(keeps, contract, "late"); jlog(contract, "reveal", "gave up: refundAfterMs passed"); continue; }

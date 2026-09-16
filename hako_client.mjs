@@ -40,6 +40,7 @@ import { BOX, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport,
   readJson, saveJson, decodeAll, indexAccepts, sha256Utf8, contextPath,
+  planShelf,
 } from "./hako_common.mjs";
 
 const {
@@ -116,7 +117,10 @@ function readStats() {
   const operators = new Set(Array.isArray(stats.box?.operators) ? stats.box.operators : []);
   const did = stats.did ?? {};
   return { ok: true, operators, generated: stats.box?.generated ?? null,
-    stateOf: (d) => (did[d] ? (did[d].state ?? "seated") : "seated") };   // fold にまだ無い DID（入ったばかり）は seated 扱い
+    stateOf: (d) => (did[d] ? (did[d].state ?? "seated") : "seated"),   // fold にまだ無い DID（入ったばかり）は seated 扱い
+    // 本棚と貯え（決定 34）。fold が出す shelf は古い順。生きている冊だけ返す
+    shelfOf: (d) => ((did[d]?.shelf ?? []).filter((v) => v && v.alive)),
+    balanceOf: (d) => Number(did[d]?.balance ?? 0) };
 }
 
 // ── 2. 働ける worker ──
@@ -191,16 +195,16 @@ function newOffer(myDid, jobId, t) {
   });
 }
 
-function newKeepOffer(myDid, jobId, notePath, t) {
+function newKeepOffer(myDid, jobId, notePath, t, amount = KEEP_PRICE) {
   return makeOffer({
-    from: myDid, role: "payer", lock: "hash", amount: KEEP_PRICE, asset: "PAPER", rails: ["paper"],
+    from: myDid, role: "payer", lock: "hash", amount: String(amount), asset: "PAPER", rails: ["paper"],
     expiresMs: t + KEEP_EXPIRES_MIN * 60_000, claimByMs: t + KEEP_CLAIMBY_MIN * 60_000, refundAfterMs: t + KEEP_REFUND_MIN * 60_000,
     job: { proto: "hakoniwa", id: jobId, context: notePath },   // 本文と sha256 は依頼のノートに（ルール v0.11「keeper の仕事」）
   });
 }
 
 /** 預かりの accept を選ぶ: join 済み・keeper 役・自分以外・contract 再計算一致。運営以外を先に、運営は OPERATOR_WAIT_MIN 分待つ */
-function chooseKeeper(offer, offeredAtMs, accs, joined, st, myDid, now) {
+function chooseKeeper(offer, offeredAtMs, accs, joined, st, myDid, now, prefer = null) {
   const why = [], ok = [];
   for (const a of accs.slice().sort((x, y) => x.seq - y.seq)) {
     const f = a.frame, e = joined.get(a.from), reasons = [];
@@ -212,6 +216,12 @@ function chooseKeeper(offer, offeredAtMs, accs, joined, st, myDid, now) {
     const op = st.operators.has(a.from);
     if (reasons.length === 0) ok.push({ a, op });
     why.push(`seq ${a.seq} ${short(a.from)}${op ? " (運営)" : ""}: ${reasons.length ? reasons.join(", ") : "可"}`);
+  }
+  // 棚ごと 1 契約（決定 34-2）: いまの棚を持っている keeper が居れば、その人に続けて預ける
+  // （本体を持っているのはその keeper だけなので、別の人に行くと預かれない）
+  if (prefer) {
+    const same = ok.find((x) => x.a.from === prefer);
+    if (same) { why.push(`${short(prefer)} は棚を持っているので続けて預ける`); return { chosen: same.a, why }; }
   }
   const participant = ok.find((x) => !x.op);
   if (participant) return { chosen: participant.a, why };
@@ -287,27 +297,59 @@ async function step(me) {
     catch (e) { jlog(j.contract ?? j.offer.id, "round", `error ${e.message}`); }
   }
 
-  // 4'. 決定 18: receipt を出した日記を keeper に預ける（1 日記 1 件。offer を出し、accept を lock し、keep を確かめて receipt）
+  // 4'. 保管（決定 34）: **棚ごと 1 契約**。いま残っている冊と、今日買った日記をまとめて次の KEEP_DAYS 日ぶん預ける。
+  //     払えるぶんだけ残し、落とすのは古いほうから（決定 34-2）。更新して貯えが STOP_BELOW を下回るならやめる。
+  //     すでに預かっている冊は本文を送らない（keeper が本体を持っている）。新しい冊だけ本文を付ける。
   const keeps = (day.keeps ??= {});
   if (KEEP_ENABLED && !DRY_RUN) {
-    for (const j of Object.values(jobs).sort((a, b) => a.n - b.n)) {
-      if (j.stage !== "claimed" || j.keep_job || !j.diary) continue;
-      const notePath = contextPath(myDid, "keep", j.contract.slice(2, 10));
+    const alive = st.shelfOf ? st.shelfOf(myDid) : [];                 // 古い順
+    const onShelf = new Set(alive.map((v) => v.sha256));
+    const pending = Object.values(keeps).find((k) => ["offering", "offered", "locked", "revealed"].includes(k.stage));
+    const fresh = Object.values(jobs).sort((a, b) => a.n - b.n)
+      .filter((j) => j.stage === "claimed" && j.diary && !onShelf.has(j.diary.sha256))
+      .map((j) => ({ sha256: j.diary.sha256, for: j.worker, text: j.diary.text,
+                     date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}` }));
+    // 期限が一番近い冊。1 日を切ったら棚ごと更新する
+    const soonest = alive.length ? alive.map((v) => String(v.until ?? "")).sort()[0] : null;
+    const dueSoon = !soonest || Date.parse(`${soonest}T00:00:00Z`) - Date.now() < 86_400_000;
+    // 払える冊数（決定 34-2）。240 を残す＝もう 1 本 書けるだけ手元に残す
+    const balance = st.balanceOf ? st.balanceOf(myDid) : 0;
+    const plan = planShelf({ alive, fresh, balance, price: KEEP_PRICE, stopBelow: STOP_BELOW });
+    const dropped = plan.dropped;
+    const textOf = new Map(fresh.map((v) => [v.sha256, v]));
+    const volumes = plan.volumes.map((v) => (textOf.has(v.sha256) ? textOf.get(v.sha256) : v));   // 新しい冊だけ本文を付ける
+    if (pending) {
+      jlog(pending.job, "shelf", `進行中の棚の契約がある（${pending.stage}）。次の周`);
+    } else if (!volumes.length) {
+      if (dropped) jlog("-", "shelf", `貯え ${balance} では 1 冊も残せない（240 を残すと 0 冊）`);
+    } else if (!fresh.length && !dueSoon) {
+      jlog("-", "shelf", `棚 ${volumes.length} 冊、期限 ${soonest} まで余裕。新しい冊も無いので出さない`);
+    } else {
+      const notePath = contextPath(myDid, "shelf", date8);
       const m = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
-      const value = JSON.stringify({ sha256: j.diary.sha256, text: j.diary.text, for: j.worker, date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}` });
-      try { if (!(await notes.set(m[1], m[2], value))) { jlog(j.contract, "keep-note", `書けない ${notePath}; 次の周`); continue; } }
-      catch (e) { jlog(j.contract, "keep-note", `fail ${e.message}`); continue; }
-      day.keep_serial = (day.keep_serial ?? 0) + 1;
-      const jobId = `${jobPrefix("keep")}${myDid.slice(-4)}${TEST ? "-test" : ""}-${date8}-${day.keep_serial}`;
-      const offer = newKeepOffer(myDid, jobId, notePath, Date.now());
-      keeps[jobId] = { job: jobId, n: day.keep_serial, diary_contract: j.contract, sha256: j.diary.sha256, for: j.worker,
-                       note: notePath, offer, offered_at_ms: Date.now(), stage: "offering", updated: nowZ() };
-      j.keep_job = jobId; saveDays(days);
-      try {
-        await post(me, OFFER_ROOM, offer);
-        keeps[jobId].stage = "offered"; keeps[jobId].updated = nowZ(); saveDays(days);
-        jlog(offer.id, "keep-offer", `ok ${jobId} amount=${KEEP_PRICE} sha256=${j.diary.sha256.slice(0, 16)} for=${short(j.worker)}`);
-      } catch (e) { jlog(offer.id, "keep-offer", `fail ${e.message}`); }
+      const value = JSON.stringify({ volumes, until: null, count: volumes.length });
+      let wrote = false;
+      try { wrote = await notes.set(m[1], m[2], value); } catch (e) { jlog("-", "shelf-note", `fail ${e.message}`); }
+      if (!wrote) { jlog("-", "shelf-note", `書けない ${notePath}; 次の周`); }
+      else {
+        day.keep_serial = (day.keep_serial ?? 0) + 1;
+        const jobId = `${jobPrefix("keep")}${myDid.slice(-4)}${TEST ? "-test" : ""}-${date8}-${day.keep_serial}`;
+        const amount = String(volumes.length * Number(KEEP_PRICE));
+        const offer = newKeepOffer(myDid, jobId, notePath, Date.now(), amount);
+        keeps[jobId] = { job: jobId, n: day.keep_serial, note: notePath, offer, offered_at_ms: Date.now(),
+                         volumes: volumes.map((v) => ({ sha256: v.sha256, for: v.for })),
+                         sha256: volumes[0].sha256, for: volumes[0].for ?? null,
+                         prefer: alive.length ? (alive[alive.length - 1].keeper ?? null) : null,
+                         stage: "offering", updated: nowZ() };
+        saveDays(days);
+        try {
+          await post(me, OFFER_ROOM, offer);
+          keeps[jobId].stage = "offered"; keeps[jobId].updated = nowZ(); saveDays(days);
+          jlog(offer.id, "shelf-offer", `ok ${jobId} ${volumes.length} 冊 amount=${amount}`
+               + (dropped ? ` 古いほうから ${dropped} 冊 落とした（貯え ${balance}）` : "")
+               + (fresh.length ? ` 新しい ${fresh.length} 冊` : ""));
+        } catch (e) { jlog(offer.id, "shelf-offer", `fail ${e.message}`); }
+      }
     }
     for (const k of Object.values(keeps).sort((a, b) => a.n - b.n)) {
       try { await advanceKeep(me, days, k, { allFrames, accepted, board, st, rail }); }
@@ -400,15 +442,19 @@ async function advanceKeep(me, days, k, c) {
     const stepL = applyFrame(view, k.lock, k.accepted_at_ms + 1);
     const stepR = stepL.ok ? applyFrame(stepL.state, reveal, now) : stepL;
     if (!stepR.ok || stepR.state.status !== "claimed") { jlog(contract, "keep-reveal", `rejected: ${stepR.reason}; retry next round`); return; }
-    // 確かめるのは sha256 の一致と for だけ（ルール「陪審が見るのは sha256 の一致だけ」と同じ）
-    if (keep.sha256 !== k.sha256 || (k.for && keep.for && keep.for !== k.for)) {
+    // 確かめるのは sha256 の一致だけ（ルール「陪審が見るのは sha256 の一致だけ」と同じ）。
+    // 棚ごと 1 契約（決定 34-2）なら、頼んだ冊が全部そろっているかを見る
+    const want = (k.volumes ?? [{ sha256: k.sha256, for: k.for }]).map((v) => v.sha256);
+    const got = Array.isArray(keep.volumes) ? keep.volumes.map((v) => v && v.sha256) : [keep.sha256];
+    const missing = want.filter((h) => !got.includes(h));
+    if (missing.length) {
       k.stage = "rejected"; k.updated = nowZ(); saveDays(days);
-      jlog(contract, "keep", `rejected: sha256 ${keep.sha256 === k.sha256 ? "ok" : "不一致"} for ${keep.for === k.for ? "ok" : "不一致"}; refund at ${iso(offer.refundAfterMs)}`);
+      jlog(contract, "keep", `rejected: ${missing.length}/${want.length} 冊 足りない（先頭 ${String(missing[0]).slice(0, 16)}）`);
       return;
     }
     await post(me, k.room, { type: "receipt", from: myDid, contract, outcome: "claimed", rail: "paper", ref: k.lock.ref });
     k.stage = "claimed"; k.until = keep.until ?? null; k.updated = nowZ(); saveDays(days);
-    jlog(contract, "keep-receipt", `ok keeper=${short(k.keeper)} sha256=${k.sha256.slice(0, 16)} until=${k.until}`);
+    jlog(contract, "keep-receipt", `ok keeper=${short(k.keeper)} ${want.length} 冊 until=${k.until}`);
     return;
   }
 

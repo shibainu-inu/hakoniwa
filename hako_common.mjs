@@ -271,3 +271,14 @@ export const sha256Utf8 = (s) => createHash("sha256").update(s, "utf8").digest("
 export const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
 /** 仕事の context ノートのパス（hako_rules.context_path と同じ）: /kv/<箱>-<DID 末尾 8 文字を小文字>/<kind>-<suffix>（箱の名前は hako_box.json） */
 export const contextPath = boxContextPath;
+
+
+/** 棚に何を載せるかを決める（決定 34-2）。alive は古い順、fresh は今日買った冊。
+ *  払えるのは (貯え − stopBelow) ÷ 単価 冊まで。あふれたら**古いほうから**落とす
+ *  （新しいほうから落とすと、さっき払って書いてもらったものが消えて壊れて見える）。 */
+export function planShelf({ alive = [], fresh = [], balance = 0, price = 20, stopBelow = 240 }) {
+  const all = [...alive.map((v) => ({ sha256: v.sha256, for: v.for })), ...fresh.map((v) => ({ sha256: v.sha256, for: v.for }))];
+  const afford = Math.max(0, Math.floor((Number(balance) - Number(stopBelow)) / Number(price)));
+  const dropped = Math.max(0, all.length - afford);
+  return { volumes: all.slice(dropped), dropped, afford, amount: (all.length - dropped) * Number(price) };
+}

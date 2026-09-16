@@ -509,7 +509,13 @@ def _fold_core(by_room, stats, now, kv, uncounted):
                 entry = {"t": ty, "seq": m["seq"], "ts": m["ts"], "from": m["from"], "sha256": f.get("sha256"),
                          "sha256_ok": isinstance(f.get("text"), str) and sha256_utf8(f["text"]) == f.get("sha256")}
                 if ty in ("diary", "inf"): entry["model"] = f.get("model"); entry["text"] = f.get("text") if isinstance(f.get("text"), str) else None
-                if ty == "keep": entry["for"] = f.get("for"); entry["until"] = f.get("until")
+                if ty == "keep":
+                    entry["for"] = f.get("for"); entry["until"] = f.get("until")
+                    # 棚ごと 1 契約（決定 34-2）: volumes に冊を並べる。前の形（sha256 1 つ）も読む
+                    vs = f.get("volumes")
+                    if isinstance(vs, list):
+                        entry["volumes"] = [{"sha256": x.get("sha256"), "for": x.get("for")}
+                                            for x in vs if isinstance(x, dict) and isinstance(x.get("sha256"), str)]
                 d["deliveries"].append(entry)
                 if ty == "diary":                                  # v0.7: 数字のノートは worker（受け取り側）のもの、for も worker
                     date8 = parse_ts(d["offer_ts"]).strftime("%Y%m%d")
@@ -560,14 +566,17 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         if not dd:
             continue
         for e in dd.get("deliveries", []):
-            if e.get("t") != "keep" or not e.get("sha256"):
+            if e.get("t") != "keep":
                 continue
             until = e.get("until")
-            shelves[c["payer"]].append({
-                "sha256": e["sha256"], "for": e.get("for"), "until": until,
-                "keeper": c["payee"], "kept_ts": _unix(e["ts"]), "contract": c["contract"],
-                "alive": bool(until) and str(until) >= today8,
-            })
+            # 棚ごと 1 契約なら volumes、1 冊ずつの契約なら sha256 1 つ（決定 34-2）
+            vols = e.get("volumes") or ([{"sha256": e["sha256"], "for": e.get("for")}] if e.get("sha256") else [])
+            for x in vols:
+                shelves[c["payer"]].append({
+                    "sha256": x["sha256"], "for": x.get("for"), "until": until,
+                    "keeper": c["payee"], "kept_ts": _unix(e["ts"]), "contract": c["contract"],
+                    "alive": bool(until) and str(until) >= today8,
+                })
     for lst in shelves.values():
         lst.sort(key=lambda v: (v["kept_ts"], v["sha256"]))          # 古い順。落とすときも古いほうから（決定 34-2）
 
