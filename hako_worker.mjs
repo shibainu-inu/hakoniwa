@@ -156,6 +156,18 @@ function ownNote(stats, did, date8, joinedEntry) {
 
 // ── 5. 依頼文（README「日記の依頼文」の型。出来事の節はまだ入れない） ──
 function numText(v) { return v === null || v === undefined ? null : (typeof v === "string" ? v : JSON.stringify(v)); }
+/** 決定 25: 掲示板の行の中に、自分が出した同じ本文の chat があるか（投稿の着地の確認） */
+function landedOnBoard(rows, myDid, text) {
+  for (const m of rows ?? []) {
+    if (m.from !== myDid) continue;
+    const t = String(m.text ?? "");
+    if (!t.startsWith("hakoniwa/0 ")) continue;
+    try { const f = JSON.parse(t.slice("hakoniwa/0 ".length)); if (f?.t === "chat" && f.text === text) return true; }
+    catch { /* skip */ }
+  }
+  return false;
+}
+
 /** 一言（決定 20）: hako_rules.py chat <did> <手番> <UTC の時> <lang> → {text,greet,words}。取れなければ null */
 function chatLine(did, turnId, hourUtc, lang) {
   const r = spawnSync("python3", [RULES_PY, "chat", did, String(turnId), String(hourUtc), lang === "ja" ? "ja" : "en"], { encoding: "utf8" });
@@ -327,11 +339,22 @@ async function step(me) {
         jlog("-", "chat", `skip ${turn} 同じ日に同じ本文（${c.text}）`);
         continue;
       }
+      // 決定 25: 投稿が失敗しても、掲示板に着地していることがある（2026-09-16 に実際に起きた。
+      // 00:04:40Z の行が掲示板にあるのに、worker は 00:05:11Z に 503 で諦め、次の周で同じ手番をもう一度出した）。
+      // そこで、出す前に掲示板を見て自分の同じ本文があれば「着地済み」として記録だけする。日記の accept と同じ考え方
+      if (landedOnBoard(board.rows, me.did, c.text)) {
+        said[turn] = { at: nowZ(), text: c.text, landed: "掲示板にあった" }; saveJson(CHAT_PATH, said, 0o600);
+        jlog("-", "chat", `landed ${turn} すでに掲示板にある（出し直さない）: ${c.text}`);
+        continue;
+      }
       try {
         await post(me, BOARD_ROOM, hakoLine({ t: "chat", text: c.text, nonce: randomBytes(8).toString("hex") }));
         said[turn] = { at: nowZ(), text: c.text }; saveJson(CHAT_PATH, said, 0o600);
         jlog("-", "chat", `ok ${turn} ${c.text}`);
-      } catch (e) { jlog("-", "chat", `fail ${e.message}`); }
+      } catch (e) {
+        // 着地したかどうかは分からない。次の周に掲示板を見て決める（ここでは記録しない）
+        jlog("-", "chat", `fail ${e.message}（次の周に掲示板を見て、着地していれば出し直さない）`);
+      }
     }
   }
 

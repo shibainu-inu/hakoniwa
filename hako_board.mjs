@@ -89,7 +89,9 @@ export async function fetchJoins(base, req) {
   const { res, text } = await reqText(`${base}/r/${BOARD_ROOM}/export`, undefined, `export ${BOARD_ROOM}`);
   if (!res.ok) throw new Error(`export ${BOARD_ROOM}: ${res.status}`);
   const gen = res.headers.get("x-room-generation");
-  return { generation: gen === null ? null : Number(gen), ...parseJoins(parseExportLines(text)) };
+  const rows = parseExportLines(text);
+  // rows も返す（決定 25: 一言の着地の確認に使う。掲示板は 1 部屋なので取り直さずに済む）
+  return { generation: gen === null ? null : Number(gen), rows, ...parseJoins(rows) };
 }
 
 export const hasRole = (entry, role) => !!entry && entry.roles.includes(role);
