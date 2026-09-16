@@ -9,7 +9,7 @@
   "keep_price": 20,
   "keep_days": 7,
   "keep_burn_share": 0.15,
-  "graduate_at": 1500,
+  "bind_at": 7,
   "seats": 72,
   "starve_below": 240,
   "leave_after_midnights": 2,

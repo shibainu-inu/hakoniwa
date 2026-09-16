@@ -133,8 +133,8 @@ function candidates(allFrames, freshFrames, myDid, jobs, now, joined, onSkip, op
 }
 
 // ── 3. 自分の数字（fold の出力 HAKO_STATS。ファイルか URL）と運営 DID ──
-const NUM_KEYS = ["earn", "spend", "balance", "mem_bytes", "life_days"];
-const FRESH = { earn: 0, spend: 0, balance: 1000, mem_bytes: 0, life_days: null };   // 入ったばかり（fold にまだ無い）の数字
+const NUM_KEYS = ["earn", "spend", "balance", "mem_volumes", "life_days"];
+const FRESH = { earn: 0, spend: 0, balance: 1000, mem_volumes: 0, life_days: null };   // 入ったばかり（fold にまだ無い）の数字
 async function readStats() {
   try {
     if (/^https?:\/\//.test(STATS)) {
@@ -152,7 +152,7 @@ function subjectNote(stats, did, date8, joinedEntry) {   // 決定 31: 日記の
     fresh: !d,
     note: { did, date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}`,
             lang: joinedEntry?.lang ?? d?.lang ?? "en", roles: joinedEntry?.roles ?? d?.roles ?? [],
-            earn: int(src.earn), spend: int(src.spend), balance: int(src.balance), mem_bytes: int(src.mem_bytes), life_days: int(src.life_days) },
+            earn: int(src.earn), spend: int(src.spend), balance: int(src.balance), mem_volumes: int(src.mem_volumes), life_days: int(src.life_days) },
   };
 }
 
@@ -206,7 +206,7 @@ function buildPrompt(ctx, subjectDid, events = null) {   // 決定 31: subject �
       `- 稼ぎ ${n.earn ?? "0"}`,
       `- 食費 ${n.spend ?? "0"}`,
       `- 財布 ${n.balance ?? "0"}`,
-      `- 記憶 ${n.mem_bytes ?? "0"} バイト`,
+      `- 記憶 ${n.mem_volumes ?? "0"} 冊`,
       n.life_days === null ? "- 日数 数えられない（食費がゼロのため）" : `- 日数 ${n.life_days} 日`,   // 決定 53
       ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "今日のできごと:", ...ev.map((e) => `- ${e}`),
       "",
@@ -225,7 +225,7 @@ function buildPrompt(ctx, subjectDid, events = null) {   // 決定 31: subject �
     `- earned ${n.earn ?? "0"}`,
     `- spent ${n.spend ?? "0"}`,
     `- wallet ${n.balance ?? "0"}`,
-    `- memory ${n.mem_bytes ?? "0"} bytes`,
+    `- memory ${n.mem_volumes ?? "0"} volumes`,
     n.life_days === null ? "- days: cannot be counted (spending is zero)" : `- days: ${n.life_days}`,   // 決定 53
     ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "What happened today:", ...ev.map((e) => `- ${e}`),
     "",

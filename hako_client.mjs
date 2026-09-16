@@ -72,7 +72,7 @@ const TEST = process.env.HAKO_CLIENT_TEST === "1";
 const argv = process.argv.slice(2);
 const ONCE = argv.includes("--once");
 const DRY_RUN = argv.includes("--dry-run");
-const NUM_KEYS = ["earn", "spend", "balance", "mem_bytes", "life_days"];   // fold の出力名（README「fold の出力」で固定）
+const NUM_KEYS = ["earn", "spend", "balance", "mem_volumes", "life_days"];   // fold の出力名（README「fold の出力」で固定）
 const OPEN_STAGES = ["offering", "offered"];                                 // accept 待ち
 const LOCKED_STAGES = ["locking", "locked", "claimed", "rejected", "refunded"];   // 今日の lock として数える（lock を出した = 部屋を作った）
 

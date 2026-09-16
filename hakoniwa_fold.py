@@ -44,19 +44,17 @@ hako_box.json（HAKO_BOX で場所を変えられる）から読む（決定 16�
        diary 行は hako_rules.check_diary の結果を参考値として付ける。条件 4 の context は <dir>/kv/ の写し
        （worker のノート hako_rules.context_path(payee, "diary", offer の日)。いちばん古い写し）を読む。写しが無ければ ok=null のまま。
        条件 2 の for は worker の DID（v0.7: worker が自分の日記を書く）
-  5. DID ごとに 稼ぎ(earn)・食費(spend)・財布(balance)・記憶(mem_bytes)・余命(life_days) を出す
-       財布 = 1,000 ＋ 稼ぎ ＋ 発行(issued) − 食費（取引・罰金・家賃）
-       記憶の家賃は 00:00Z 刻み。各 00:00Z に、その時点で有効な mem（最後の mem 行）の bytes ぶん（1 KiB につき 1 PAPER）を引く。
-       最初の請求は mem 行の後の最初の 00:00Z。mem を出し直したら次の 00:00Z から新しい bytes。
-       財布 < その日の家賃なら引かず眠る（sleep_days +1）。眠りが 7 日続いたら mem_bytes を 0 にして記憶は消える
-       余命 = 財布 ÷ 直近 7 日の 1 日あたり食費。食費ゼロなら null
+  5. DID ごとに 稼ぎ(earn)・食費(spend)・財布(balance)・記憶(mem_volumes)・日数(life_days) を出す
+       財布 = 1,000 ＋ 稼ぎ ＋ 発行(issued) − 食費（取引・罰金）
+       記憶 = keeper に預けていて期限が生きている冊の数（決定 59。自分のノートの経路と家賃は廃止。mem の行は数えない）
+       日数 = 財布 ÷ 直近 7 日の 1 日あたり食費。食費ゼロなら null
        box.contracts: lock された契約ごとに 1 要素（契約の線の元データ。hako_avatar.links_from_box が読む）。
        contract / kind / payer / payee / room / locked_seq / locked_ts / settled_seq / settled_ts / outcome / dispute / test。
        時刻は unix 秒、outcome は receipt / refunded / null、test の契約も同じ配列に入れる（数字には入れない）
   6. 席の層（お金の流れは変えない）。join は seq 順に席（SEATS=72、運営の DID を含む）まで。満席の join は数えない（1,000 も役も無い）。
        退場は 3 つ: 枯渇 starved（財布が STARVE_BELOW=240 を下回った時点。戻れない）、席を離れた left（00:00Z を 2 回、掲示板の行も
-       lock された契約への関わりも無いまま越えた。空席があれば join で戻れる）、卒業 graduated（累計の稼ぎが GRADUATE_EARN=1,500 に達した
-       receipt の時点。財布は paper_total から外れて box.graduated_paper に載る。戻らない）。運営の DID は退場も卒業もしない。
+       lock された契約への関わりも無いまま越えた。空席があれば join で戻れる）、綴じた bound（預けた冊が BIND_AT_VOLUMES=7 に達した
+       keep の receipt の時点。財布は paper_total から外れて box.bound_paper に載る。戻らない。決定 60）。運営の DID は退場も綴じもしない。
        席の無い DID との契約も数字には入る（避けるのは script の側）。数えない join の集合が変わらなくなるまで畳み直す
 出力 --json: {"box": {...}, "did": {did: {...}}}。did の値のキー名は README「fold の出力」の一覧で固定。
 """
@@ -77,9 +75,7 @@ PENALTY_SHARE = 0.20          # 途中でやめた罰金: 未消化分（lock �
 KEEPER_SHARE = 0.85           # 保管代の 85% が keeper、15% は庭の外へ（決定 18。記憶を持ち続ける費用）
 KEEP_PRICE = 20               # 保管代（日記 1 本を KEEP_DAYS 日）。fold は数えない（値は offer が決める）
 KEEP_DAYS = 7                 # 既定の預かり日数 N
-RENT_PER_KIB_DAY = 1.0        # 記憶の家賃（仮）
 MAX_CHAT_CHARS = 140          # 一言の長さ（決定 20。ルール「行の形」の 140 字と同じ）
-SLEEP_DAYS_TO_ERASE = 7       # 眠りがこの日数続いたら記憶は消える
 BOARD_ROOM = "hakoniwa-board"
 OFFER_ROOM = "tclk-offers"    # tclk OFFER_ROOM（~/tclk/src/technocore.ts）
 KV_DIR = "kv"                 # <dir>/kv/<ns>/<key>/<時刻>.json: context ノートの写し
@@ -93,7 +89,7 @@ OPERATOR_DIDS = ("did:key:z6MkmG1MiumCr8Jk6vL5qt2A1XzEst6CVT5rwRHUHYwKPvqA",   #
                  "did:key:z6Mkq52a8jJna9yBCGyTL6hbMuqQiMbxihFcuQeSUuyGhE3T")   # …hE3T miner・worker・client
 SEATS = 72                    # 席（運営の DID を含む）
 STARVE_BELOW = 240.0          # 枯渇: 財布が一番安い推論代を下回る
-GRADUATE_EARN = 1500.0        # 卒業: 累計の稼ぎがこれに達した receipt
+BIND_AT_VOLUMES = 7           # 綴じる: 預けた冊（別々の sha256）がこれに達した keep の receipt（決定 60）
 LEAVE_AFTER_MIDNIGHTS = 2     # 席を離れる: 00:00Z を 2 回、何もしないまま越えた
 DIARY_PER_CLIENT_DAY = 20     # 1 つの client が 1 日（UTC、lock の時刻）に lock できる日記
 DIARIES_PER_WORKER_DAY = 3    # 1 つの worker の 1 日（UTC、lock の時刻）に数える日記（決定 17 ②。v0.7〜v0.9 は 1）
@@ -102,7 +98,7 @@ SEAT_ITERATIONS = 8           # 数えない join が変わらなくなるまで
 # ── 箱の設定（決定 16 ①）: hako_box.json（HAKO_BOX で場所を変えられる）。無ければ上の既定＝いまの値。読んだ値で上の定数を置き換える ──
 BOX_PATH = os.environ.get("HAKO_BOX") or str(Path(__file__).resolve().parent / "hako_box.json")
 BOX_DEFAULTS = {"box": "hakoniwa", "venue": "https://technocore.chat", "offers_room": OFFER_ROOM, "initial_paper": INITIAL,
-                "diary_price": 400, "inference_price": 240, "inference_min": 240, "graduate_at": GRADUATE_EARN, "seats": SEATS,
+                "diary_price": 400, "inference_price": 240, "inference_min": 240, "bind_at": BIND_AT_VOLUMES, "seats": SEATS,
                 "starve_below": STARVE_BELOW, "leave_after_midnights": LEAVE_AFTER_MIDNIGHTS, "client_max_per_day": DIARY_PER_CLIENT_DAY,
                 "diaries_per_worker_day": DIARIES_PER_WORKER_DAY,
                 "random_accept_pct": 55, "random_keep_pct": 15, "operator_wait_min": 30, "client_interval_sec": 300, "worker_interval_sec": 600, "miner_interval_sec": 300,
@@ -127,7 +123,7 @@ def load_box(path=None):
 
 def apply_box(cfg):
     """設定で fold の定数を置き換える（値の意味と式は変えない）。hako_rules のノートの名前空間も箱の名前に合わせる。戻り値は cfg"""
-    global BOX, INITIAL, MINER_SHARE, BOARD_ROOM, OFFER_ROOM, JOB_PREFIX, INF_PREFIX, OPERATOR_DIDS, SEATS, STARVE_BELOW, GRADUATE_EARN
+    global BOX, INITIAL, MINER_SHARE, BOARD_ROOM, OFFER_ROOM, JOB_PREFIX, INF_PREFIX, OPERATOR_DIDS, SEATS, STARVE_BELOW, BIND_AT_VOLUMES
     global KEEPER_SHARE, KEEP_PRICE, KEEP_DAYS
     global LEAVE_AFTER_MIDNIGHTS, DIARY_PER_CLIENT_DAY, DIARIES_PER_WORKER_DAY
     BOX = cfg
@@ -138,7 +134,7 @@ def apply_box(cfg):
     BOARD_ROOM = str(cfg["board"]); OFFER_ROOM = str(cfg["offers_room"])
     JOB_PREFIX = f"{cfg['box']}-"; INF_PREFIX = f"{cfg['box']}-inf-"
     OPERATOR_DIDS = tuple(cfg["operators"])
-    SEATS = int(cfg["seats"]); STARVE_BELOW = float(cfg["starve_below"]); GRADUATE_EARN = float(cfg["graduate_at"])
+    SEATS = int(cfg["seats"]); STARVE_BELOW = float(cfg["starve_below"]); BIND_AT_VOLUMES = int(cfg["bind_at"])
     LEAVE_AFTER_MIDNIGHTS = int(cfg["leave_after_midnights"]); DIARY_PER_CLIENT_DAY = int(cfg["client_max_per_day"])
     DIARIES_PER_WORKER_DAY = int(cfg["diaries_per_worker_day"])
     hako_rules.NOTE_NS_PREFIX = f"{cfg['box']}-"
@@ -154,7 +150,7 @@ def box_summary(cfg=None):
 
 BOX = apply_box(load_box())
 DEFAULT_LANG = "en"
-CONTEXT_KEYS = ("earn", "spend", "balance", "mem_bytes", "life_days")
+CONTEXT_KEYS = ("earn", "spend", "balance", "mem_volumes", "life_days")
 BOARD_KINDS = ("rules", "join", "mem", "serve", "issue")
 DEAL_TCLK = ("lock", "reveal", "receipt", "refund")
 DEAL_HAKO = ("diary", "inf", "keep")
@@ -365,7 +361,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
     did = {}
     def D(d):
         return did.setdefault(d, {"roles": None, "lang": None, "joined": None, "earn": 0.0, "spend": 0.0,
-                                  "issued": 0.0, "burn": 0.0, "mem_rows": [],   # mem_rows: (ts, bytes, note)
+                                  "issued": 0.0, "burn": 0.0,
                                   "chat": None,                                   # 一言（決定 20）。最後の 1 件 {ts, seq, text}
                                   "ledger": []})                                  # ledger: (ts, kind, amount)
     burn_by_date = defaultdict(float)                     # 庭の外へ出た額（罰金 20% ＋ validator が無いときの推論 15%）
@@ -391,10 +387,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
             x["roles"] = list(roles) if isinstance(roles, list) and roles else list(DEFAULT_ROLES)
             x["lang"] = f["lang"] if isinstance(f.get("lang"), str) else DEFAULT_LANG
         elif t == "mem":
-            x = D(m["from"])
-            try: b = int(f.get("bytes", 0))
-            except (TypeError, ValueError): continue
-            x["mem_rows"].append((m["ts"], max(b, 0), f.get("note")))
+            stats["mem_ignored"] = stats.get("mem_ignored", 0) + 1    # 決定 59: 自分のノートの経路は廃止。行は数えない
         elif t == "chat":                                         # 一言（決定 20）: 数字には入れない。最後の 1 件だけ持つ
             txt = f.get("text")
             if isinstance(txt, str) and txt.strip() and len(txt) <= MAX_CHAT_CHARS:
@@ -578,8 +571,18 @@ def _fold_core(by_room, stats, now, kv, uncounted):
                     "keeper": c["payee"], "kept_ts": _unix(e["ts"]), "contract": c["contract"],
                     "alive": bool(until) and str(until) >= today8,
                 })
-    for lst in shelves.values():
-        lst.sort(key=lambda v: (v["kept_ts"], v["sha256"]))          # 古い順。落とすときも古いほうから（決定 34-2）
+    # 同じ冊を延長すると keep の納品が何度も来る。冊は 1 つに畳み、いちばん新しい預かりを採る（決定 60）。
+    # 並びは最初に預けた時刻（古い順。落とすときも古いほうから。決定 34-2）
+    for d_, lst in list(shelves.items()):
+        first, keep = {}, {}
+        for v in sorted(lst, key=lambda v: (v["kept_ts"], v["sha256"])):
+            first.setdefault(v["sha256"], v["kept_ts"])
+            keep[v["sha256"]] = v                                    # 後の（新しい）納品で上書き
+        out_lst = []
+        for sha, v in keep.items():
+            v = dict(v); v["kept_ts"] = first[sha]; out_lst.append(v)
+        out_lst.sort(key=lambda v: (v["kept_ts"], v["sha256"]))
+        shelves[d_] = out_lst
 
     # 2'. 発行（取引が畳めてから。issue の seq 順）: 運営の client への蛇口（v0.9、決定 17: 刻んで出せる）。
     #     to は運営の DID、pool は「その issue の時刻までに to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計 − その (date, to) で
@@ -615,7 +618,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
 
     # 5. DID ごとの数字と、席の層（席・退場・卒業）
     ledgers = {d_: _ledger(x, now) for d_, x in did.items()}
-    seat = _seats(joins, activity, ledgers, did, now)
+    seat = _seats(joins, activity, ledgers, did, now, shelves)
     out = {}
     today = now.strftime("%Y-%m-%d")
     week_ago = now - dt.timedelta(days=7)
@@ -627,23 +630,22 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         daily = spend_7d / 7.0
         earn_today = sum(a for ts, k, a in led["entries"] if k == "earn" and ts.strftime("%Y-%m-%d") == today)
         spend_today = sum(a for ts, k, a in led["entries"] if k == "spend" and ts.strftime("%Y-%m-%d") == today)
-        mem_bytes = led["mem_bytes"]
+        shelf = shelves.get(d_, [])
         out[d_] = {
             "roles": x["roles"], "lang": x["lang"], "joined": x["joined"],
             "earn": round(x["earn"], 2), "spend": round(led["spend"], 2), "issued": round(x["issued"], 2),
             "balance": round(balance, 2),
-            "mem_bytes": mem_bytes, "sleep_days": led["sleep_days"], "chat": x["chat"],
+            "mem_volumes": sum(1 for v in shelf if v["alive"]), "chat": x["chat"],   # 決定 59: 記憶＝預けている冊
             "life_days": (round(balance / daily, 1) if daily > 0 else None),
             "earn_today": round(earn_today, 2), "spend_today": round(spend_today, 2),
-            "mem_days_left": (round(balance / (mem_bytes / 1024 * RENT_PER_KIB_DAY), 1) if mem_bytes else None),
             "operator": d_ in OPERATOR_DIDS,
             "state": seat["state"].get(d_, ("seated", None))[0],
             "state_since": _iso(seat["state"].get(d_, ("seated", None))[1]),
-            "shelf": shelves.get(d_, []),                                # 本棚（決定 34）。古い順
-            "shelf_alive": sum(1 for v in shelves.get(d_, []) if v["alive"]),
+            "shelf": shelf,                                              # 本棚（決定 34）。古い順
+            "shelf_alive": sum(1 for v in shelf if v["alive"]),
         }
     stats["join_no_seat"] = len(seat["no_seat"]); stats["join_after_exit"] = len(seat["after_exit"])
-    graduated_paper = sum(v["balance"] for v in out.values() if v["state"] == "graduated")
+    bound_paper = sum(v["balance"] for v in out.values() if v["state"] == "bound")
     cfg = box_summary()
     cfg["rules_config_sha256"] = rules[-1][5] if rules else None                     # 有効な rules 行が指す設定の sha256（v0.8 以降。無ければ None）
     cfg["match"] = None if cfg["rules_config_sha256"] is None else (cfg["rules_config_sha256"] == cfg["sha256"])   # 読んだファイルと一致するか。False なら数字は疑う
@@ -652,11 +654,11 @@ def _fold_core(by_room, stats, now, kv, uncounted):
            "rules_did": (rules[-1][3] if rules else None), "validator": (rules[-1][3] if rules else None),
            "operators": list(OPERATOR_DIDS),
            "seats": {"capacity": SEATS, "taken": seat["taken"], "free": SEATS - seat["taken"]},
-           "exits": {k: sum(1 for v in out.values() if v["state"] == k) for k in ("starved", "left", "graduated")},
+           "exits": {k: sum(1 for v in out.values() if v["state"] == k) for k in ("starved", "left", "bound")},
            "joins_uncounted": seat["no_seat"] + seat["after_exit"],
            "stats": stats, "receipts": sum(1 for d in deals.values() if d["settled"] and not d["test"]),
-           "paper_total": round(sum(v["balance"] for v in out.values() if v["state"] != "graduated"), 2),
-           "graduated_paper": round(graduated_paper, 2),
+           "paper_total": round(sum(v["balance"] for v in out.values() if v["state"] != "bound"), 2),
+           "bound_paper": round(bound_paper, 2),
            "shelves": {"volumes": sum(len(v) for v in shelves.values()),
                        "alive": sum(1 for lst in shelves.values() for v in lst if v["alive"]),
                        "owners": sum(1 for lst in shelves.values() if lst)},   # 本棚（決定 34）
@@ -678,11 +680,11 @@ def _validator_at(rules, t):
     return None
 
 
-def _seats(joins, activity, ledgers, did, now):
+def _seats(joins, activity, ledgers, did, now, shelves=None):
     """席の層。時刻順に join・活動・財布と稼ぎの点・00:00Z を見て、席（SEATS）と退場（枯渇・席を離れる・卒業）を決める。
     お金の流れは変えない（席の無い DID との契約も数字には入る。避けるのは script の側）。
     → {"state": did → (state, since), "taken": 席の数, "no_seat": [join], "after_exit": [join]}
-       state: seated / left / starved / graduated / no_seat。運営の DID は退場も卒業もしない"""
+       state: seated / left / starved / bound / no_seat。運営の DID は退場も綴じもしない（決定 60）"""
     events = []                                           # (dt, order, kind, payload)。order: 00:00Z 0 → 点 1 → 活動 2 → join 3
     for seq, t, d in joins: events.append((t, 3, "join", (seq, d)))
     for d, ts_list in activity.items():
@@ -690,6 +692,13 @@ def _seats(joins, activity, ledgers, did, now):
     for d, led in ledgers.items():
         if did[d]["joined"] is None: continue
         for t, bal, earn_cum in led["points"]: events.append((t, 1, "point", (d, bal, earn_cum)))
+    for d_, lst in (shelves or {}).items():               # 綴じる（決定 60）: 別々の冊が BIND_AT_VOLUMES に達した時点
+        seen = set()
+        for v in sorted(lst, key=lambda v: (v["kept_ts"], v["sha256"])):
+            seen.add(v["sha256"])
+            if len(seen) >= BIND_AT_VOLUMES:
+                events.append((dt.datetime.fromtimestamp(v["kept_ts"], dt.timezone.utc), 1, "bind", d_))
+                break
     if joins:
         t = _next_midnight(min(j[1] for j in joins))
         while t <= now: events.append((t, 0, "midnight", None)); t += dt.timedelta(days=1)
@@ -702,17 +711,20 @@ def _seats(joins, activity, ledgers, did, now):
                     state[d] = ("left", t); taken -= 1
         elif kind == "act":
             last_act[pl] = max(last_act.get(pl, pl and t), t)
+        elif kind == "bind":
+            st, _ = state.get(pl, (None, None))
+            if st == "seated" and pl not in OPERATOR_DIDS:
+                state[pl] = ("bound", t); taken -= 1
         elif kind == "point":
             d, bal, earn_cum = pl
             st, _ = state.get(d, (None, None))
             if st != "seated" or d in OPERATOR_DIDS: continue
-            if earn_cum >= GRADUATE_EARN: state[d] = ("graduated", t); taken -= 1
-            elif bal < STARVE_BELOW: state[d] = ("starved", t); taken -= 1
+            if bal < STARVE_BELOW: state[d] = ("starved", t); taken -= 1
         else:
             seq, d = pl
             st, _ = state.get(d, (None, None))
             if st == "seated": continue                   # 席にいる DID の join（役や言葉の出し直し）は数える。席は変わらない
-            if st in ("starved", "graduated"):
+            if st in ("starved", "bound"):
                 after_exit.append({"seq": seq, "did": d, "ts": _iso(t), "why": st}); continue
             if taken < SEATS:
                 state[d] = ("seated", t); taken += 1
@@ -778,15 +790,10 @@ def _next_midnight(t):
 
 
 def _ledger(x, now):
-    """取引・罰金・発行と、00:00Z ごとの家賃を時刻順に畳む → balance / spend / mem_bytes / sleep_days / entries"""
+    """取引・罰金・発行を時刻順に畳む → balance / spend / entries（決定 59: ノートの家賃は廃止）"""
     events = [(parse_ts(ts), 0, k, a) for ts, k, a in x["ledger"]]
-    mems = sorted((parse_ts(ts), b) for ts, b, _ in x["mem_rows"])
-    if mems:
-        t = _next_midnight(mems[0][0])                      # 最初の請求は mem 行の後の最初の 00:00Z
-        while t <= now:
-            events.append((t, 1, "tick", 0.0)); t += dt.timedelta(days=1)
-    balance, spend, earn_cum, sleep, erased_at = float(INITIAL), 0.0, 0.0, 0, None
-    entries = []                                            # (dt, kind, amount)。家賃も spend として並ぶ
+    balance, spend, earn_cum = float(INITIAL), 0.0, 0.0
+    entries = []                                            # (dt, kind, amount)
     points = []                                             # (dt, その時点の財布, 累計の稼ぎ)。席の層が枯渇と卒業を見る
     for t, _, kind, amount in sorted(events, key=lambda e: (e[0], e[1])):
         if kind == "earn" or kind == "issued":
@@ -794,30 +801,10 @@ def _ledger(x, now):
             if kind == "earn": earn_cum += amount
         elif kind == "spend":
             balance -= amount; spend += amount; entries.append((t, kind, amount))
-        else:                                               # tick: その時点で有効な mem の bytes ぶん
-            b = _mem_at(mems, t, erased_at)
-            rent = b / 1024 * RENT_PER_KIB_DAY
-            if rent <= 0: continue
-            if balance >= rent:
-                balance -= rent; spend += rent; sleep = 0; entries.append((t, "spend", rent))
-            else:
-                sleep += 1
-                if sleep >= SLEEP_DAYS_TO_ERASE: erased_at = t   # 記憶は消える（以後、家賃も無い）
         points.append((t, balance, earn_cum))
-    return {"balance": balance, "spend": spend, "sleep_days": sleep, "entries": entries, "points": points,
-            "mem_bytes": _mem_at(mems, now + dt.timedelta(seconds=1), erased_at)}
+    return {"balance": balance, "spend": spend, "entries": entries, "points": points}
 
 
-def _mem_at(mems, t, erased_at):
-    """時刻 t より前の最後の mem 行の bytes。消えた後は、消えた時刻より後の mem 行だけ"""
-    b = 0
-    for ts, bytes_ in mems:
-        if ts >= t: break
-        b = 0 if (erased_at is not None and ts <= erased_at) else bytes_
-    return b
-
-
-# ── 出力 ──────────────────────────────────────────────────────────────
 
 def print_text(res):
     box, out = res["box"], res["did"]
@@ -832,13 +819,13 @@ def print_text(res):
         print(f"read {box['stats']['rows']:,} rows  peak memory {rss:,.0f} MiB")
     except Exception:
         pass
-    print(f"box {c.get('box')}  config sha256 {str(c.get('sha256'))[:12]}  rules config {str(c.get('rules_config_sha256'))[:12]} match {c.get('match')}  seats {c.get('values', {}).get('seats')}  graduate_at {c.get('values', {}).get('graduate_at')}  validator_share {c.get('values', {}).get('validator_share')}")
-    print(f"PAPER in box {box['paper_total']}  burned {box['burned']}  graduated {box['graduated_paper']}  "
+    print(f"box {c.get('box')}  config sha256 {str(c.get('sha256'))[:12]}  rules config {str(c.get('rules_config_sha256'))[:12]} match {c.get('match')}  seats {c.get('values', {}).get('seats')}  bind_at {c.get('values', {}).get('bind_at')}  validator_share {c.get('values', {}).get('validator_share')}")
+    print(f"PAPER in box {box['paper_total']}  burned {box['burned']}  bound {box['bound_paper']}  "
           f"seats {box['seats']['taken']}/{box['seats']['capacity']}  exits {box['exits']}  validator {str(box['validator'])[-4:]}")
     for d, v in out.items():
         short = d.replace("did:key:", "")[:4] + "…" + d[-4:]
         print(f"{short}  {','.join(v['roles'] or []):20} earn {v['earn']:8.1f}  spend {v['spend']:8.1f}  "
-              f"issued {v['issued']:6.1f}  balance {v['balance']:8.1f}  mem {v['mem_bytes']}B  sleep {v['sleep_days']}  "
+              f"issued {v['issued']:6.1f}  balance {v['balance']:8.1f}  mem {v['mem_volumes']}冊  "
               f"life {v['life_days']}  {v['state']}{' (op)' if v['operator'] else ''}")
     for cid, d in box["deals"].items():
         print(f"deal {cid[:18]} {d['kind']:5} {d['amount']:>5} {d['status']:9} {d['job']}")
