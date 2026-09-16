@@ -36,10 +36,10 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchJoins, hasRole } from "./hako_board.mjs";
-import { BOX, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
+import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport,
-  readJson, saveJson, decodeAll, indexAccepts, sha256Utf8, contextPath, diaryContextPath,
+  readJson, saveJson, decodeAll, indexAccepts, sha256Utf8, contextPath, diaryContextPath, saySomething,
   planShelf,
 } from "./hako_common.mjs";
 
@@ -66,6 +66,7 @@ const KEEP_EXPIRES_MIN = Number(process.env.HAKO_KEEP_EXPIRES_MIN ?? 120);
 const KEEP_CLAIMBY_MIN = Number(process.env.HAKO_KEEP_CLAIMBY_MIN ?? 240);
 const KEEP_REFUND_MIN = Number(process.env.HAKO_KEEP_REFUND_MIN ?? 360);
 const STATE_DIR = process.env.HAKO_CLIENT_STATE ?? path.join(homedir(), ".hako_client");
+const CHAT_ON = process.env.HAKO_CLIENT_CHAT !== "0";        // 一言（決定 63）。0 で切る
 const LOG_PATH = process.env.HAKO_CLIENT_LOG ?? path.join(homedir(), "hako_client.log");
 const RULES_PY = process.env.HAKO_RULES_PY ?? path.join(HERE, "hako_rules.py");
 const TEST = process.env.HAKO_CLIENT_TEST === "1";
@@ -371,7 +372,19 @@ async function step(me) {
     try { if (await notes.set(ns, "open", openValue)) { day.open_note = openValue; saveDays(days); jlog("-", "open-note", `ok ${openNow.length} open offer(s)`); } }
     catch (e) { jlog("-", "open-note", `fail ${e.message}`); }
   }
+
+  // 一言（決定 63）: client も喋る。1 日 1 回と、この周に払った契約のぶん
+  if (CHAT_ON && !DRY_RUN) {
+    const turns = [`${date8}-c`, ...saidTurns.splice(0)];
+    await saySomething({
+      me, rows: board.rows ?? [], turns, now: Date.now(), lang: board.joined.get(myDid)?.lang ?? "en",
+      statePath: path.join(STATE_DIR, "chat.json"), post: (room, text) => post(me, room, text),
+      boardRoom: BOARD_ROOM, rulesPy: RULES_PY, log: (turn, what) => jlog("-", "chat", `${turn} ${what}`),
+    });
+  }
 }
+
+const saidTurns = [];        // 決定 63: この周のできごと（払った契約）。step の終わりに一言にする
 
 /** 預かりの契約を 1 段進める（決定 18）: offered → lock → keep の確認 → receipt / refund */
 async function advanceKeep(me, days, k, c) {
@@ -564,6 +577,7 @@ async function advance(me, days, day, j, c) {
       await post(me, j.room, { type: "receipt", from: myDid, contract, outcome: "claimed", rail: "paper", ref: j.lock.ref });
       j.stage = "claimed"; j.updated = nowZ(); saveDays(days);
       jlog(contract, "receipt", `ok worker=${short(j.worker)} text=${diary.text}`);
+      saidTurns.push(`${c.date8}-paid-${contract.slice(2, 10)}`);   // 決定 63: 払った日の一言
       return;
     }
     if (r.ok === null) { jlog(contract, "diary", `undecided: ${r.reason} (worker note ${wn.path} ${wn.ctx ? "read" : "not found"}); retry next round until ${iso(offer.refundAfterMs)}`); if (now < offer.refundAfterMs) return; }

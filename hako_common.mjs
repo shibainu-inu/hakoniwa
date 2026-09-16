@@ -307,3 +307,57 @@ export function checkShelfNote(body, { sha256Utf8: sha, has = () => false } = {}
   }
   return { ok: true, volumes: out, why: "" };
 }
+
+// ---------- 一言（決定 20、決定 63 で誰でも・何度でも）----------
+// 掲示板に出すだけで、数字には入らない。手番（turn）ごとに 1 回。同じ日に同じ本文になったら出さない（語彙が小さいとまれに当たる）。
+// 決定 25: 投稿が失敗しても掲示板に着地していることがあるので、出す前に自分の同じ本文を探す。
+import { spawnSync as _spawnSync } from "node:child_process";
+import { randomBytes as _randomBytes } from "node:crypto";
+
+/** hako_rules.py chat <did> <手番> <UTC の時> <lang> → {text,greet,words}。取れなければ null */
+export function chatLine(rulesPy, did, turnId, hourUtc, lang) {
+  const r = _spawnSync("python3", [rulesPy, "chat", did, String(turnId), String(hourUtc), lang === "ja" ? "ja" : "en"], { encoding: "utf8" });
+  try { return JSON.parse(String(r.stdout).trim()); } catch { return null; }
+}
+
+/** その DID が掲示板に出した同じ本文の chat が rows にあるか（着地の確認。決定 25） */
+export function chatLanded(rows, myDid, text) {
+  for (const m of rows ?? []) {
+    if (m.from !== myDid) continue;
+    const t = String(m.text ?? "");
+    if (!t.startsWith("hakoniwa/0 ")) continue;
+    try { const f = JSON.parse(t.slice("hakoniwa/0 ".length)); if (f?.t === "chat" && f.text === text) return true; } catch { /* 読めない行は飛ばす */ }
+  }
+  return false;
+}
+
+/**
+ * 手番のぶんだけ一言を出す（決定 63）。turns は ["20260917", "20260917-job-6cfafe51", …]。
+ * 1 日の上限 maxPerDay まで。post は (room, text) を投げる関数、log は (手番, 何が起きたか) を書く関数。
+ */
+export async function saySomething({ me, rows, turns, now, lang, statePath, post, boardRoom, rulesPy, log, maxPerDay = 6 }) {
+  const today = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
+  const said = readJson(statePath, {});
+  const doneToday = () => Object.entries(said).filter(([k, v]) => k.startsWith(today) && !v.skipped).length;
+  for (const turn of turns) {
+    if (said[turn]) continue;
+    if (doneToday() >= maxPerDay) { log?.(turn, `今日はもう ${maxPerDay} 回 出した`); break; }
+    const c = chatLine(rulesPy, me.did, turn, new Date(now).getUTCHours(), lang);
+    if (!c) continue;
+    if (Object.entries(said).some(([k, v]) => k.startsWith(today) && v.text === c.text)) {
+      said[turn] = { at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"), text: c.text, skipped: "同じ日に同じ本文" };
+      saveJson(statePath, said, 0o600); log?.(turn, `skip 同じ日に同じ本文（${c.text}）`); continue;
+    }
+    if (chatLanded(rows, me.did, c.text)) {
+      said[turn] = { at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"), text: c.text, landed: "掲示板にあった" };
+      saveJson(statePath, said, 0o600); log?.(turn, `landed すでに掲示板にある: ${c.text}`); continue;
+    }
+    try {
+      await post(boardRoom, hakoLine({ t: "chat", text: c.text, nonce: _randomBytes(8).toString("hex") }));
+      said[turn] = { at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"), text: c.text };
+      saveJson(statePath, said, 0o600); log?.(turn, `ok ${c.text}`);
+    } catch (e) {
+      log?.(turn, `fail ${e.message}（次の周に掲示板を見て、着地していれば出し直さない）`);
+    }
+  }
+}

@@ -30,10 +30,11 @@ import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fetchJoins, hasRole, parseJoins, parseExportLines as parseBoardLines } from "./hako_board.mjs";
+import { fileURLToPath } from "node:url";
 import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, setLogFile, loadSigner, req, readTail, post, notes, fetchExport,
-  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, checkShelfNote,
+  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, checkShelfNote, saySomething,
 } from "./hako_common.mjs";
 
 const {
@@ -46,6 +47,9 @@ const INTERVAL_SEC = Number(process.env.HAKO_KEEPER_INTERVAL_SEC ?? BOX.client_i
 const MIN_AMOUNT = Number(process.env.HAKO_KEEPER_MIN ?? BOX.keep_price);
 const KEEP_DAYS = Number(process.env.HAKO_KEEPER_DAYS ?? BOX.keep_days);
 const STATE_DIR = process.env.HAKO_KEEPER_STATE ?? path.join(homedir(), ".hako_keeper");
+const CHAT_ON = process.env.HAKO_KEEPER_CHAT !== "0";        // 一言（決定 63）。0 で切る
+const RULES_PY = process.env.HAKO_RULES_PY ?? path.join(path.dirname(fileURLToPath(import.meta.url)), "hako_rules.py");
+const saidTurns = [];                                        // 決定 63: この周のできごと（預かった契約）
 const LOG_PATH = process.env.HAKO_KEEPER_LOG ?? path.join(homedir(), "hako_keeper.log");
 const JOB_PREFIX = jobPrefix("keep");
 const argv = process.argv.slice(2);
@@ -265,6 +269,7 @@ async function step(me) {
         await post(me, k.room, line, { gateUntilMs: k.claimByMs, onGateWait: (n) => jlog(contract, "keep", `gate busy, retry ${n}`) });
         mark(keeps, contract, "delivered");
         jlog(contract, "keep", `ok ${many ? `${k.volumes.length} 冊` : `sha256=${k.sha256.slice(0, 16)}`} until=${k.until}`);
+        saidTurns.push(`${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-kept-${contract.slice(2, 10)}`);   // 決定 63
       }
       if (k.stage === "delivered") {
         if (Date.now() >= k.refundAfterMs) { mark(keeps, contract, "late"); jlog(contract, "reveal", "gave up: refundAfterMs passed"); continue; }
@@ -284,6 +289,17 @@ async function step(me) {
 
   // 8. recall に応える
   await serveRecalls(me, keeps);
+
+  // 一言（決定 63）: keeper も喋る。1 日 1 回と、この周に預かった契約のぶん
+  if (CHAT_ON && !DRY_RUN) {
+    const date8 = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    await saySomething({
+      me, rows: board.rows ?? [], turns: [`${date8}-k`, ...saidTurns.splice(0)], now: Date.now(),
+      lang: board.joined?.get(me.did)?.lang ?? "en", statePath: path.join(STATE_DIR, "chat.json"),
+      post: (room, text) => post(me, room, text), boardRoom: BOARD_ROOM, rulesPy: RULES_PY,
+      log: (turn, what) => jlog("-", "chat", `${turn} ${what}`),
+    });
+  }
 }
 
 // ── 本体 ──

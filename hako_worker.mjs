@@ -43,7 +43,7 @@ import { fetchJoins, hasRole, parseJoins, parseExportLines as parseBoardLines } 
 import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport, GateClosed,
-  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, contextPath, diaryContextPath,
+  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, contextPath, diaryContextPath, saySomething,
 } from "./hako_common.mjs";
 
 const {
@@ -288,6 +288,7 @@ async function step(me) {
   const diaryOffers = freshFrames.filter((x) => x.frame.type === "offer" && String(x.frame.job?.id ?? "").startsWith(JOB_PREFIX)).length;
   jlog("-", "round", `gen ${exp.generation} rows ${exp.rows.length} new ${fresh.length} last_seq ${next.last_seq} ${JOB_PREFIX}* offers ${diaryOffers} candidates ${found.length} joined ${board.joined.size} (board bad_sig ${board.stats.bad_sig})${stats ? ` stats ${stats.box?.generated} operators ${operators.size}` : ` stats missing (${STATS})`}`);
   let restedNow = false;                               // この周で乱数が「受けない」を出したか（決定 20: 休んだ日の一言）
+  const saidTurns = [];                                   // 決定 63: この周のできごと（一言の手番）
   for (const { ts, offer } of found.slice(0, MAX_PER_ROUND)) {
     if (RANDOM_ON) {                                   // 決定 19: 手番は offer の id。同じ offer では何度引いても同じ結果
       const c = chooseAction(me.did, offer.id);
@@ -321,44 +322,25 @@ async function step(me) {
       await post(me, OFFER_ROOM, text, { gateUntilMs: offer.claimByMs, onGateWait: (n) => jlog(contract, "accept", `gate busy, retry ${n}`) });
       mark(jobs, contract, "accepted");
       jlog(contract, "accept", `ok job=${offer.job.id} amount=${offer.amount} client=${short(offer.from)}`);
+      saidTurns.push(`${date8}-job-${contract.slice(2, 10)}`);       // 決定 63: 受けた日の一言
       try { const sn = stateNote(contract); await notes.set(sn.ns, sn.key, stateNoteValue("accepted"), { ifAbsent: true }); }
       catch (e) { jlog(contract, "state-note", `skip ${e.message}`); }
     } catch (e) { jlog(contract, "accept", `fail ${e.message}`); }
   }
   saveJson(CURSOR_PATH, next);
 
-  // 一言（決定 20）: 1 日 1 回は必ず。その日に乱数で「受けない」を引いたら、もう 1 回だけ（手番は <日付>-rest）。
-  // 掲示板に出すだけで、数字には入らない。同じ日に同じ本文になったら 2 回目は出さない（語彙が小さいとまれに当たる）
+  // 一言（決定 20、決定 63）: 1 日 1 回は必ず。受けた日・納めた日はそのぶんも出す（手番は <日付>-<できごと>）。
+  // 掲示板に出すだけで、数字には入らない
   if (CHAT_ON) {
     const today = new Date(now).toISOString().slice(0, 10).replace(/-/g, "");
-    const said = readJson(CHAT_PATH, {});
-    const lang = board.joined.get(me.did)?.lang ?? "en";
-    for (const turn of restedNow ? [today, `${today}-rest`] : [today]) {
-      if (said[turn]) continue;
-      const c = chatLine(me.did, turn, new Date(now).getUTCHours(), lang);
-      if (!c) continue;
-      if (Object.entries(said).some(([k, v]) => k.startsWith(today) && v.text === c.text)) {
-        said[turn] = { at: nowZ(), text: c.text, skipped: "同じ日に同じ本文" }; saveJson(CHAT_PATH, said, 0o600);
-        jlog("-", "chat", `skip ${turn} 同じ日に同じ本文（${c.text}）`);
-        continue;
-      }
-      // 決定 25: 投稿が失敗しても、掲示板に着地していることがある（2026-09-16 に実際に起きた。
-      // 00:04:40Z の行が掲示板にあるのに、worker は 00:05:11Z に 503 で諦め、次の周で同じ手番をもう一度出した）。
-      // そこで、出す前に掲示板を見て自分の同じ本文があれば「着地済み」として記録だけする。日記の accept と同じ考え方
-      if (landedOnBoard(board.rows, me.did, c.text)) {
-        said[turn] = { at: nowZ(), text: c.text, landed: "掲示板にあった" }; saveJson(CHAT_PATH, said, 0o600);
-        jlog("-", "chat", `landed ${turn} すでに掲示板にある（出し直さない）: ${c.text}`);
-        continue;
-      }
-      try {
-        await post(me, BOARD_ROOM, hakoLine({ t: "chat", text: c.text, nonce: randomBytes(8).toString("hex") }));
-        said[turn] = { at: nowZ(), text: c.text }; saveJson(CHAT_PATH, said, 0o600);
-        jlog("-", "chat", `ok ${turn} ${c.text}`);
-      } catch (e) {
-        // 着地したかどうかは分からない。次の周に掲示板を見て決める（ここでは記録しない）
-        jlog("-", "chat", `fail ${e.message}（次の周に掲示板を見て、着地していれば出し直さない）`);
-      }
-    }
+    const turns = [today];
+    if (restedNow) turns.push(`${today}-rest`);
+    for (const t of saidTurns) turns.push(t);                       // この周で起きたこと（受けた・納めた）
+    await saySomething({
+      me, rows: board.rows, turns, now, lang: board.joined.get(me.did)?.lang ?? "en",
+      statePath: CHAT_PATH, post: (room, text) => post(me, room, text), boardRoom: BOARD_ROOM,
+      rulesPy: RULES_PY, log: (turn, what) => jlog("-", "chat", `${turn} ${what}`),
+    });
   }
 
   // 3'. accepting のまま残った契約: export に着地していれば accepted、失効していれば expired、それ以外は出し直し（周期ぶん空く）
@@ -517,6 +499,7 @@ async function step(me) {
         await post(me, j.room, hakoLine(diary), { gateUntilMs: j.claimByMs, onGateWait: (k) => jlog(contract, "diary", `gate busy, retry ${k}`) });
         mark(jobs, contract, "delivered");
         jlog(contract, "diary", `ok ${Array.from(text).length} chars sha256=${diary.sha256.slice(0, 16)} text=${text}`);
+        saidTurns.push(`${j.date}-wrote-${contract.slice(2, 10)}`);  // 決定 63: 書けた日の一言
       }
       if (j.stage === "delivered") {
         // reveal（SPEC §3.4: locked の間、refundAfterMs 前、ref は lock.ref）

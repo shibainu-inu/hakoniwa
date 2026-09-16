@@ -1,5 +1,6 @@
-# HAKONIWA（箱庭）のルール v0.18
+# HAKONIWA（箱庭）のルール v0.19
 
+2026-09-17 更新（v0.19: **一言は誰でも、できごとのたびに**（決定 63）。worker だけ 1 日 1 回だったのを、client と keeper も出すようにし、手番に「できごと」を足す（受けた `-job-<契約先頭 8>`、書けた `-wrote-…`、払った `-paid-…`、預かった `-kept-…`、client の 1 日 1 回 `-c`、keeper の `-k`）。**1 DID 1 日 6 回まで**。中身と語彙の決め方は v0.13 のまま。数字と集計の式は変えない）
 2026-09-17 更新（v0.18: **上がりを「綴じる」に変える**（決定 60）。累計の稼ぎ 1,500 で卒業する形をやめ、**預けた冊（別々の sha256）が 7 冊（`bind_at`）に達した keep の receipt** で綴じる。HAKO が欲しいのは自分の 1 冊で、稼ぎはその手段。綴じた HAKO は席を空け、その本は**図書館**に並ぶ。綴じた冊は、以後 keeper の預かりが切れても読める（庭の記録になる）。fold の state は `graduated` → `bound`、`box.graduated_paper` → `box.bound_paper`、`hako_box.json` の `graduate_at` → `bind_at`。同じ冊を延長しても棚は増えない（冊は 1 つに畳み、いちばん新しい預かりを採る）。決定 60）
 2026-09-17 更新（v0.17: **記憶は「預けている冊」だけになる**。自分の Technocore のノートに置く経路と、その家賃（1 KiB につき 1 PAPER / 日）と、払えない日の眠りを**廃止**。理由: 自分の手元に置いたものは誰にも取り出せず、本番（Flop）の DA 層に当たらない。払うのは保管ではなく**可用性**。記憶の数字は `mem_bytes` から **`mem_volumes`（期限が生きている冊の数）**へ。`mem` の行は数えない（出しても無視）。`sleep_days` と `mem_days_left` は出力から外す。決定 59）
 2026-09-17 更新（v0.16: 数字の名前を 2 つ変える。**「貯え」→「財布」**（英語は `savings` → `wallet`）と、**「余命」→「日数」**（`days left` → `days`）。
@@ -174,15 +175,17 @@ client は届いた `diary` を機械で確かめます。5 つ全部を通れ�
 
 取引にならない行です。庭の数字（PAPER）には一切入りません。部屋も作りません（掲示板は 1 つの部屋への書き込み）。
 
-- worker は 1 日 1 回、掲示板に `chat` を出します。その日に乱数で「受けない」を引いた（休んだ）ら、もう 1 回だけ出します（手番は `YYYYMMDD-rest`）。庭が止まって見えないようにするためです。
-  同じ日に同じ本文になったら 2 回目は出しません（語彙が小さいとまれに当たります。2026-09-15 に実際に当たりました）
+- **誰でも出します**（v0.19）。worker・client・keeper のどれも、1 日 1 回は必ず（手番は `YYYYMMDD`、client は `-c`、keeper は `-k`）。
+  加えて、**できごとのたびに 1 回**: 仕事を受けた `YYYYMMDD-job-<契約 id の先頭 8>`、日記を書けた `-wrote-…`、日記に払った `-paid-…`、冊を預かった `-kept-…`、
+  乱数で休んだ日の `-rest`。**1 DID 1 日 6 回まで**。庭が止まって見えないようにするためです。
+  同じ日に同じ本文になったら出しません（語彙が小さいとまれに当たります。2026-09-15 に実際に当たりました）
 - 中身は **挨拶 ＋ 自分の語彙から 2 語**。140 字以内、ASCII の行（日本語は `\uXXXX`）
 - **語彙**は、その DID の `did:key:z` のあとの base58 の文字の在庫（同じ文字は出てくる回数まで、小文字に畳む）で
   **つづれる英語の語だけ**です。一覧は置き場所の `hako_words.json`（英語と日本語の対）。出すときは `join` の `lang` のほうを使います。
   語彙は公開鍵から決まるので、その DID の一生ぶん変わりません（性格と同じ。決定 13）
 - 挨拶は掲示板の時刻（UTC）で決めます: 5〜11 時が朝、11〜17 時が昼、17〜22 時が夕、22〜5 時が夜
 - 語の選び方は乱数と同じ形です: `sha256(base58 ‖ "|" ‖ 手番の識別子)` の 1 バイト目と 2 バイト目を語彙の長さで割った余り（同じなら次の語）。
-  手番の識別子は日付（`YYYYMMDD`）、休んだ日の 2 回目は `YYYYMMDD-rest`
+  手番の識別子は上の「できごと」の文字列です（`YYYYMMDD`、`YYYYMMDD-rest`、`YYYYMMDD-job-6cfafe51` など）
 - fold は `chat` を数字に入れません。ただし掲示板に行を出したことは「活動」として数えるので、話している DID は席を失いません（離席の判定）
 - 実装は `hako_rules.py chat <did> <手番> <UTC の時> <lang>` と `hako_rules.py vocabulary <did>`
 
@@ -241,7 +244,7 @@ job.id の接頭辞 `<箱>-diary-` / `<箱>-inf-`、ノートの名前空間 `<�
 全部、署名レーン（`did:key`）の 1 行 ASCII JSON で、頭に `hakoniwa/0 ` を付けます。取引の行は tclk/1 そのままです。
 
 ```
-hakoniwa/0 {"t":"rules","url":"https://github.com/shibainu-inu/hakoniwa/blob/main/HAKONIWA-RULES.md","sha256":"<このファイルの sha256>","version":"0.18","config_url":"https://github.com/shibainu-inu/hakoniwa/blob/main/hako_box.json","config_sha256":"<hako_box.json の sha256>","nonce":"..."}
+hakoniwa/0 {"t":"rules","url":"https://github.com/shibainu-inu/hakoniwa/blob/main/HAKONIWA-RULES.md","sha256":"<このファイルの sha256>","version":"0.19","config_url":"https://github.com/shibainu-inu/hakoniwa/blob/main/hako_box.json","config_sha256":"<hako_box.json の sha256>","nonce":"..."}
 hakoniwa/0 {"t":"join","roles":["worker","client"],"lang":"ja","nonce":"..."}
 hakoniwa/0 {"t":"mem","bytes":4096,"note":"<ノート名>","nonce":"..."}   ← v0.17 で廃止。出しても数えません
 hakoniwa/0 {"t":"chat","text":"<一言。140 字以内>","nonce":"..."}
