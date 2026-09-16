@@ -271,6 +271,7 @@ export const sha256Utf8 = (s) => createHash("sha256").update(s, "utf8").digest("
 export const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
 /** 仕事の context ノートのパス（hako_rules.context_path と同じ）: /kv/<箱>-<DID 末尾 8 文字を小文字>/<kind>-<suffix>（箱の名前は hako_box.json） */
 export const contextPath = boxContextPath;
+export { diaryContextPath } from "./hako_box.mjs";      // 決定 31
 
 
 /** 棚に何を載せるかを決める（決定 34-2）。alive は古い順、fresh は今日買った冊。

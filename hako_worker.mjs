@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// hako_worker.mjs — 箱庭の worker（ルール v0.7、本数は v0.10）。client の「あなたの今日の日記を書いて」の offer を 1 日 N 本（hako_box.json の diaries_per_worker_day、いま 3）まで受け、自分の数字のノートを置き、
-// miner から推論を買って自分の日記を書き、納品して reveal する。役の表（HAKONIWA-RULES.md v0.7「動き方」）の worker の行を 1 周にしたもの。
+// hako_worker.mjs — 箱庭の worker（ルール v0.7、本数は v0.10、日記の向きは決定 31）。client の「あなたの今日の日記を書いて」の offer を 1 日 N 本
+// （hako_box.json の diaries_per_worker_day、いま 3）まで受け、**払った側（client）の数字**のノートを置き、miner から推論を買って
+// **払った側の日記**を書き、納品して reveal する。役の表（HAKONIWA-RULES.md「動き方」）の worker の行を 1 周にしたもの。
 // 用法: read -s TC_PASS && export TC_PASS   # パスフレーズは端末に打つ。コマンド行に書かない
 //       node hako_worker.mjs                # 10 分ごとのループ（HAKO_WORKER_INTERVAL_SEC で変更）
 //       node hako_worker.mjs --dry-run [--export <dir|file>] [--board <dir|file>]   # 日記 offer の候補の抽出だけ（鍵は要らない）
@@ -19,16 +20,17 @@
 //      amount ≥ HAKO_WORKER_MIN / expiresMs と claimByMs 未到来 / 自分の offer ではない（client ≠ worker）/
 //      出した DID が庭に join 済みで client 役 / 運営以外の join 済み DID の accept が先に無い（決定 12。client は運営以外を先に lock するので、
 //      運営 worker の accept が先にあっても受けてよい）/ 今日（UTC）の自分の日記の契約が N 本未満（1 worker 1 日 N 本。契約にならなかった段は数えない）。乱数は切り、1 周に 1 件受ける
-//   3. 自分の context ノート /kv/hakoniwa-<自分の末尾 8 小文字>/diary-<YYYYMMDD>（5 つの数字は HAKO_STATS から。整数、桁区切りなし）を置いてから
+//   3. context ノート /kv/hakoniwa-<自分の末尾 8 小文字>/diary-<YYYYMMDD>-<client の末尾 8 小文字>（決定 31: 中身は**払った側**の 5 つの数字。
+//      HAKO_STATS から。整数、桁区切りなし）を置いてから
 //      accept（hash lock）。accept と preimage は投稿前に jobs.json（0600）に残す
 //   4. client の lock を待つ（PaperRail.verifyLock）。claimByMs までに無ければ諦める
-//   5. lock を見たら、自分のノートの数字と自分の性格（hako_rules.py personality）で README「日記の依頼文」の型の依頼文を組んで
+//   5. lock を見たら、そのノートの数字と**払った側の性格**（hako_rules.py personality）で README「日記の依頼文」の型の依頼文を組んで
 //      自分のノート /kv/hakoniwa-<自分の末尾 8 小文字>/inf-<日記の契約先頭 8>-<通し番号> に置き、推論 offer を出す（払う側）
 //   6. 推論 offer への accept から、決定 12 の選び方（join 済み・miner 役・自分以外・seq 最初）で 1 件を lock する（門は claimByMs まで再送）。
 //      expiresMs までに該当が無ければ通し番号を進めて出し直す（HAKO_WORKER_INF_RETRIES 回まで）
 //   7. miner の inf と reveal を待つ。sha256 と秘密を確かめて receipt。refundAfterMs を過ぎても reveal が無ければ refund
 //   8. 納品前に本文を確かめる（hako_rules.py check-diary）。5 つの値と一致しない数字は消し、140 字に収める。それ以外は 1 字も変えない。
-//      通れば diary の行（for は自分の DID）を日記の部屋に納品し、reveal（preimage）。receipt は client の仕事なので待たない
+//      通れば diary の行（決定 31: for は**払った側の DID**）を日記の部屋に納品し、reveal（preimage）。receipt は client の仕事なので待たない
 //   9. 1 件ごとに log に 1 行（時刻、日記の契約先頭 16、段階、結果）
 // 依頼文の「私の性格」の行は hako_rules.py personality <自分の DID>（決定 13）で決める。「昨日から起きたこと」の節は fold が出すまで入れない。
 import { mkdirSync } from "node:fs";
@@ -41,7 +43,7 @@ import { fetchJoins, hasRole, parseJoins, parseExportLines as parseBoardLines } 
 import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport, GateClosed,
-  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, contextPath,
+  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, contextPath, diaryContextPath,
 } from "./hako_common.mjs";
 
 const {
@@ -142,7 +144,7 @@ async function readStats() {
     return readJson(STATS, null);
   } catch { return null; }
 }
-function ownNote(stats, did, date8, joinedEntry) {
+function subjectNote(stats, did, date8, joinedEntry) {   // 決定 31: 日記の主語は払った側（client）
   const d = stats?.did?.[did];
   const int = (v) => (v === null || v === undefined ? null : Math.round(Number(v)));
   const src = d ?? FRESH;
@@ -186,15 +188,16 @@ function personalityWords(did, lang) {
   try { return JSON.parse(String(r.stdout).trim()).words[lang === "ja" ? "ja" : "en"] ?? []; } catch { return []; }
 }
 // 今日のできごと（依頼文の「動作報告」の材料。DID の表示は数字を含むので入れない。数字は本文に出さないよう言葉で）
+// 決定 31: 日記は払った側（client）のもの。主語は「私＝払った HAKO」で、できごともその一日
 const TODAY_EVENTS = {
-  ja: ["client から「今日の日記を書いて」という仕事を一つ受けた", "miner から推論を一つ買って、その言葉を借りて書いている", "仕事が終わったら日記代が稼ぎに入る"],
-  en: ["took one job from a client: \"write today's diary\"", "bought one inference from a miner and am writing with its words", "when the job is done the diary fee goes into my earnings"],
+  ja: ["今日の日記を書いてもらう仕事を一つ出した", "その代金を払った", "書き上がった日記は、私の記録として残る"],
+  en: ["put out one job: have my diary for today written", "paid the fee for it", "the finished diary stays as my own record"],
 };
-function buildPrompt(ctx, clientDid, events = null) {
+function buildPrompt(ctx, subjectDid, events = null) {   // 決定 31: subject は日記の主語＝払った側（client）
   const ev = events ?? TODAY_EVENTS[ctx.lang === "ja" ? "ja" : "en"];
   const n = Object.fromEntries(NUM_KEYS.map((k) => [k, numText(ctx[k])]));
   const allowed = NUM_KEYS.map((k) => n[k]).filter((v) => v !== null);
-  const words = clientDid ? personalityWords(clientDid, ctx.lang) : [];
+  const words = subjectDid ? personalityWords(subjectDid, ctx.lang) : [];
   if (ctx.lang === "ja") {
     return [
       "あなたは HAKONIWA という庭に住む HAKO です。今日の日記を、一人称「私」で書いてください。",
@@ -296,8 +299,8 @@ async function step(me) {
       if (c) jlog(offer.id, "random", `work（受ける） byte=${c.byte} p=受ける ${c.p.work}% 休む ${c.p.rest}%`);
     }
     const date8 = String(ts).slice(0, 10).replace(/-/g, "");
-    const own = ownNote(stats, me.did, date8, board.joined.get(me.did));
-    const notePath = contextPath(me.did, "diary", date8);
+    const own = subjectNote(stats, offer.from, date8, board.joined.get(offer.from));   // 決定 31: client の数字
+    const notePath = diaryContextPath(me.did, offer.from, date8);
     const [, ns, key] = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
     if (!(await notes.set(ns, key, JSON.stringify(own.note)))) { jlog(offer.id, "note", `cannot write ${notePath}; retry next round`); continue; }
     jlog(offer.id, "note", `ok ${notePath} ${NUM_KEYS.map((k) => `${k}=${own.note[k]}`).join(",")}${own.fresh ? " (not in stats yet: fresh numbers)" : ""}`);
@@ -391,13 +394,13 @@ async function step(me) {
         jlog(contract, "lock", `ok ref=${lock.ref.slice(0, 18)}`);
       }
       if (j.stage === "locked") {
-        // 5. 自分のノートの数字 → 依頼文 → 自分の推論ノート → 推論 offer
+        // 5. 払った側の数字（決定 31）→ 依頼文 → 自分の推論ノート → 推論 offer
         const ctx = j.ctx;
-        if (!ctx || typeof ctx !== "object") { mark(jobs, contract, "bad_context"); jlog(contract, "context", "gave up: own note missing in jobs.json"); continue; }
+        if (!ctx || typeof ctx !== "object") { mark(jobs, contract, "bad_context"); jlog(contract, "context", "gave up: client note missing in jobs.json"); continue; }
         const n = (j.inf_tries ?? 0) + 1;
         if (n > INF_RETRIES + 1) { mark(jobs, contract, "inf_failed"); jlog(contract, "inf-offer", `gave up: no acceptable accept after ${n - 1} offers`); continue; }
         // ノートは 1 行（technocore の clean_text が改行を空白にする）。ここで畳んでから置き、miner に渡る本文と同じにしておく
-        const prompt = buildPrompt(ctx, me.did).split("\n").join(" ").replace(/\s+/g, " ").trim();
+        const prompt = buildPrompt(ctx, j.client).split("\n").join(" ").replace(/\s+/g, " ").trim();   // 決定 31: 性格も払った側のもの
         const notePath = contextPath(me.did, "inf", `${contract.slice(2, 10)}-${n}`);
         const [, ns, key] = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
         if (!(await notes.set(ns, key, prompt))) { jlog(contract, "inf-offer", `cannot write note ${notePath}; retry next round`); continue; }
@@ -499,7 +502,7 @@ async function step(me) {
         const ctxValues = NUM_KEYS.map((k) => (j.ctx[k] === undefined ? null : j.ctx[k]));
         const date = `${j.date.slice(0, 4)}-${j.date.slice(4, 6)}-${j.date.slice(6, 8)}`;
         const meta = { signer: me.did, room: j.room, deal_room: j.room, before_reveal: true };
-        const mk = (t) => ({ t: "diary", contract, for: me.did, date, text: t, sha256: sha256Utf8(t), model: j.inf.model ?? "unknown", nonce: randomBytes(8).toString("hex") });
+        const mk = (t) => ({ t: "diary", contract, for: j.client, date, text: t, sha256: sha256Utf8(t), model: j.inf.model ?? "unknown", nonce: randomBytes(8).toString("hex") });   // 決定 31: for は払った側
         let r = checkDiary(mk(text), ctxValues, j.client, j.date, me.did, meta);
         if (r.ok !== true) {
           // 数字だけ直す: 5 つの値と一致しない数字は消す。長ければ切る。それ以外は変えない

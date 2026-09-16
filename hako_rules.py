@@ -52,6 +52,12 @@ def context_path(did, kind, suffix):
     return f"/kv/{NOTE_NS_PREFIX}{str(did)[-8:].lower()}/{kind}-{suffix}"
 
 
+def diary_context_path(worker_did, client_did, date8):
+    """日記の数字のノート（決定 31）。置くのは worker、中身は**払った側（client）の数字**。
+    1 日に何人ぶんも書くので、パスに client の末尾 8 文字を入れて分ける"""
+    return context_path(worker_did, "diary", f"{date8}-{str(client_did)[-8:].lower()}")
+
+
 PERSONALITY_WORDS = {
     "ja": {"work": ("よく働く", "のんびり"), "keep": ("思い出を残したがる", "忘れっぽい")},
     "en": {"work": ("hard-working", "easygoing"), "keep": ("keeps memories", "forgetful")},
@@ -222,10 +228,10 @@ def check_diary_detail(diary_frame, context_values, client_did, date_yyyymmdd, w
     else:
         checks["1"] = True
 
-    # 2. 宛先と日付
+    # 2. 宛先と日付（決定 31: 日記は払った側のもの。for は client）
     c2 = []
-    if f.get("for") != worker_did:
-        c2.append("for is not the worker")
+    if f.get("for") != client_did:
+        c2.append("for is not the client")
     if _date8(f.get("date", "")) != _date8(date_yyyymmdd):
         c2.append("date is not the offer day")
     checks["2"] = not c2

@@ -67,6 +67,9 @@ const toAscii = (s) => s.replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt
 const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
 export const noteNs = (did) => `${box.name}-${String(did).slice(-8).toLowerCase()}`;
 export const contextPath = (did, kind, suffix) => `/kv/${noteNs(did)}/${kind}-${suffix}`;
+// 日記の数字のノート（決定 31）。置くのは worker、中身は払った側（client）の数字
+export const diaryContextPath = (workerDid, clientDid, date8) =>
+  contextPath(workerDid, "diary", `${date8}-${String(clientDid).slice(-8).toLowerCase()}`);
 const short = (d) => "…" + String(d).slice(-5);
 const iso = (ms) => new Date(ms).toISOString();
 const nowZ = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -187,9 +190,10 @@ export async function chooseAction(did, turnId) {
 }
 const numText = (v) => (v === null || v === undefined ? null : (typeof v === "string" ? v : JSON.stringify(v)));
 // 今日のできごと（依頼文の「動作報告」の材料。DID の表示は数字を含むので入れない。数字は本文に出さないよう言葉で）
+// 決定 31: 日記は払った側（client）のもの。主語は「私＝払った HAKO」で、できごともその一日
 const TODAY_EVENTS = {
-  ja: ["client から「今日の日記を書いて」という仕事を一つ受けた", "miner から推論を一つ買って、その言葉を借りて書いている", "仕事が終わったら日記代が稼ぎに入る"],
-  en: ["took one job from a client: \"write today's diary\"", "bought one inference from a miner and am writing with its words", "when the job is done the diary fee goes into my earnings"],
+  ja: ["今日の日記を書いてもらう仕事を一つ出した", "その代金を払った", "書き上がった日記は、私の記録として残る"],
+  en: ["put out one job: have my diary for today written", "paid the fee for it", "the finished diary stays as my own record"],
 };
 export function buildPrompt(ctx, did, events = null) {
   const ev = events ?? TODAY_EVENTS[ctx.lang === "ja" ? "ja" : "en"];
@@ -312,13 +316,14 @@ export class Worker {
           }
           this.log("random", `受ける byte=${c.byte} 受ける ${c.p.work}% 休む ${c.p.rest}%`);
         }
-        const d = stats?.did?.[me];
+        const subject = pick.client;                     // 決定 31: 日記は払った側のもの。数字も性格も client のもの
+        const d = stats?.did?.[subject];
         const src = d ?? FRESH;
         const int = (v) => (v === null || v === undefined ? null : Math.round(Number(v)));
-        const e = joined.get(me);
-        const note = { did: me, date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}`, lang: e?.lang ?? "en", roles: e?.roles ?? [],
+        const e = joined.get(subject);
+        const note = { did: subject, date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}`, lang: e?.lang ?? "en", roles: e?.roles ?? [],
           earn: int(src.earn), spend: int(src.spend), balance: int(src.balance), mem_bytes: int(src.mem_bytes), life_days: int(src.life_days) };
-        const notePath = contextPath(me, "diary", date8);
+        const notePath = diaryContextPath(me, subject, date8);
         const [, ns, key] = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
         if (!(await notes.set(ns, key, JSON.stringify(note)))) { this.log("note", `ノートを書けない ${notePath}`); return; }
         this.log("note", `ok ${notePath} ${NUM_KEYS.map((k) => `${k}=${note[k]}`).join(",")}${d ? "" : " (fresh)"}`);
@@ -354,7 +359,7 @@ export class Worker {
         // 5. 依頼文 → 自分の推論ノート → 推論 offer
         const n = (st.inf_tries ?? 0) + 1;
         if (n > INF_RETRIES + 1) { this.set("gave_up"); this.log("inf-offer", `${n - 1} 回出しても miner が付かない。今日はあきらめる`); return; }
-        const prompt = collapse(buildPrompt(st.ctx, me));
+        const prompt = collapse(buildPrompt(st.ctx, st.client));   // 決定 31: 性格も払った側のもの
         const notePath = contextPath(me, "inf", `${st.contract.slice(2, 10)}-${n}`);
         const [, ns, key] = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
         if (!(await notes.set(ns, key, prompt))) { this.log("inf-offer", `ノートを書けない ${notePath}`); return; }
@@ -462,7 +467,7 @@ export class Worker {
           text = fixed;
         }
         const date = `${st.date.slice(0, 4)}-${st.date.slice(4, 6)}-${st.date.slice(6, 8)}`;
-        const diary = { t: "diary", contract: st.contract, for: me, date, text, sha256: await sha256Hex(text), model: st.inf.model ?? "unknown", nonce: randomHex(8) };
+        const diary = { t: "diary", contract: st.contract, for: st.client, date, text, sha256: await sha256Hex(text), model: st.inf.model ?? "unknown", nonce: randomHex(8) };   // 決定 31
         this.set("delivering", { diary });
         await this.me.post(st.room, hakoLine(diary), { gateUntilMs: st.claimByMs, onWait: (k) => this.log("diary", `gate busy, retry ${k}`) });
         this.set("delivered");

@@ -509,6 +509,7 @@ def _fold_core(by_room, stats, now, kv, uncounted):
                 entry = {"t": ty, "seq": m["seq"], "ts": m["ts"], "from": m["from"], "sha256": f.get("sha256"),
                          "sha256_ok": isinstance(f.get("text"), str) and sha256_utf8(f["text"]) == f.get("sha256")}
                 if ty in ("diary", "inf"): entry["model"] = f.get("model"); entry["text"] = f.get("text") if isinstance(f.get("text"), str) else None
+                if ty == "diary": entry["for"] = f.get("for")      # 決定 31: 誰の日記か（払った側）
                 if ty == "keep":
                     entry["for"] = f.get("for"); entry["until"] = f.get("until")
                     # 棚ごと 1 契約（決定 34-2）: volumes に冊を並べる。前の形（sha256 1 つ）も読む
@@ -517,9 +518,9 @@ def _fold_core(by_room, stats, now, kv, uncounted):
                         entry["volumes"] = [{"sha256": x.get("sha256"), "for": x.get("for")}
                                             for x in vs if isinstance(x, dict) and isinstance(x.get("sha256"), str)]
                 d["deliveries"].append(entry)
-                if ty == "diary":                                  # v0.7: 数字のノートは worker（受け取り側）のもの、for も worker
+                if ty == "diary":                                  # 決定 31: 日記は払った側（client）のもの。数字のノートは worker が置く
                     date8 = parse_ts(d["offer_ts"]).strftime("%Y%m%d")
-                    wpath = hako_rules.context_path(d["payee"], "diary", date8)
+                    wpath = hako_rules.diary_context_path(d["payee"], d["payer"], date8)
                     ctx, copy, why = context_values(kv, wpath)
                     ok, reason, checks = hako_rules.check_diary_detail(
                         f, ctx, d["payer"], date8, d["payee"],

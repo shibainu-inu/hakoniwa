@@ -40,3 +40,6 @@ export const jobPrefix = (kind) => `${BOX.box}-${kind}-`;
 export const noteNs = (did) => `${BOX.box}-${String(did).slice(-8).toLowerCase()}`;
 /** 仕事の context ノートのパス（hako_rules.context_path と同じ）: /kv/<box>-<末尾 8>/<kind>-<suffix> */
 export const contextPath = (did, kind, suffix) => `/kv/${noteNs(did)}/${kind}-${suffix}`;
+// 日記の数字のノート（決定 31）。置くのは worker、中身は払った側（client）の数字。1 日に何人ぶんも書くので client で分ける
+export const diaryContextPath = (workerDid, clientDid, date8) =>
+  contextPath(workerDid, "diary", `${date8}-${String(clientDid).slice(-8).toLowerCase()}`);

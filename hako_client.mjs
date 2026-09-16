@@ -39,7 +39,7 @@ import { fetchJoins, hasRole } from "./hako_board.mjs";
 import { BOX, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, fileLog, setLogFile, loadSigner, req, readTail, post, notes, fetchExport,
-  readJson, saveJson, decodeAll, indexAccepts, sha256Utf8, contextPath,
+  readJson, saveJson, decodeAll, indexAccepts, sha256Utf8, contextPath, diaryContextPath,
   planShelf,
 } from "./hako_common.mjs";
 
@@ -180,8 +180,8 @@ function checkDiary(diary, ctxValues, client, date8, worker, meta) {
   if (!out) throw new Error(`check-diary produced no output (${(r.stderr ?? "").trim().slice(0, 120)})`);
   return JSON.parse(out);
 }
-async function workerNote(worker, date8) {
-  const p = contextPath(worker, "diary", date8);
+async function workerNote(worker, date8, client) {
+  const p = diaryContextPath(worker, client, date8);      // 決定 31: worker が置く、払った側の数字のノート
   const [, ns, key] = p.match(/^\/kv\/([^/]+)\/([^/]+)$/);
   const raw = await notes.get(ns, key).catch(() => null);
   if (raw === null) return { path: p, ctx: null };
@@ -308,7 +308,7 @@ async function step(me) {
     const pending = Object.values(keeps).find((k) => ["offering", "offered", "locked", "revealed"].includes(k.stage));
     const fresh = Object.values(jobs).sort((a, b) => a.n - b.n)
       .filter((j) => j.stage === "claimed" && j.diary && !onShelf.has(j.diary.sha256))
-      .map((j) => ({ sha256: j.diary.sha256, for: j.worker, text: j.diary.text,
+      .map((j) => ({ sha256: j.diary.sha256, for: j.diary.for ?? myDid, text: j.diary.text,   // 決定 31: 冊は自分（払った側）の記録
                      date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}` }));
     // 期限が一番近い冊。1 日を切ったら棚ごと更新する
     const soonest = alive.length ? alive.map((v) => String(v.until ?? "")).sort()[0] : null;
@@ -554,7 +554,7 @@ async function advance(me, days, day, j, c) {
     const stepL = applyFrame(view, j.lock, j.accepted_at_ms + 1);
     const stepR = stepL.ok ? applyFrame(stepL.state, reveal, now) : stepL;
     if (!stepR.ok || stepR.state.status !== "claimed") { jlog(contract, "reveal", `rejected: ${stepR.reason}; retry next round`); return; }
-    const wn = await workerNote(j.worker, c.date8);
+    const wn = await workerNote(j.worker, c.date8, myDid);
     const ctxValues = NUM_KEYS.map((k) => (wn.ctx && wn.ctx[k] !== undefined ? wn.ctx[k] : null));
     const meta = { signer: j.worker, room: j.room, deal_room: j.room, before_reveal: diary !== null && diarySeq < revealSeq };
     const r = checkDiary(diary ?? {}, ctxValues, myDid, c.date8, j.worker, meta);
