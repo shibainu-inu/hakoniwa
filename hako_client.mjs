@@ -22,8 +22,8 @@
 //   3. offer への accept のうち、join 済み・worker 役・自分以外・contract 再計算一致・fold で seated・今日の lock が N 本未満の worker のものを、
 //      運営以外（stats の box.operators に無い DID）を先に seq 順で 1 件 lock する。運営の worker の accept は、offer を出してから
 //      HAKO_CLIENT_OPERATOR_WAIT_MIN 分の間に運営以外の accept が無いときだけ lock する（門の再送は claimByMs まで）
-//   4. 取引の部屋に worker の diary と reveal が届いたら、worker のノート /kv/hakoniwa-<worker 末尾 8 小文字>/diary-<YYYYMMDD> の 5 値で
-//      hako_rules.py check-diary（条件 2 の for は worker、条件 4 はそのノート）と sha256 を確かめる。合格なら receipt。
+//   4. 取引の部屋に worker の diary と reveal が届いたら、worker のノート /kv/hakoniwa-<worker 末尾 8 小文字>/diary-<YYYYMMDD>-<自分の末尾 8 小文字> の 5 値で
+//      hako_rules.py check-diary（決定 31: 条件 2 の for は自分＝払った側、条件 4 はそのノート）と sha256 を確かめる。合格なら receipt。
 //      不合格なら理由をローカル log に残し、refundAfterMs 後に refund。reveal が無いまま refundAfterMs を過ぎても refund
 //   5. 開いている offer を自分のノート /kv/hakoniwa-<末尾 8 小文字>/open に 1 行 JSON で置く {"date","open":[{"seq","frame"}]}。
 //      入口 v2（ブラウザの worker）はこれを読んで受ける（/r/tclk-offers の export は重いので）。

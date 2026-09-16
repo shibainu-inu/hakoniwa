@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""hako_rules.py — HAKONIWA-RULES.md v0.7「日記の合格条件」（DECISIONS 決定 9、14）の機械判定と、context ノートのパス。
+"""hako_rules.py — HAKONIWA-RULES.md v0.15「日記の合格条件」（DECISIONS 決定 9、14、31）の機械判定と、context ノートのパス。
 
-    from hako_rules import check_diary, context_path
+    from hako_rules import check_diary, context_path, diary_context_path
     ok, reason = check_diary(diary_frame, context_values, client_did, date_yyyymmdd, worker_did, meta=None)
-      v0.7: worker が自分の日記を書くので、条件 2 の for は worker の DID、条件 4 の context は worker のノートの 5 値（client_did は記録用）
+      v0.15（決定 31）: worker は払った側（client）の日記を書くので、条件 2 の for は **client の DID**、
+      条件 4 の context は worker が置いたノートの 5 値（中身は client の数字）
+    diary_context_path(worker_did, client_did, "20260909")
+      → "/kv/hakoniwa-<worker 末尾 8 小文字>/diary-20260909-<client 末尾 8 小文字>"
     context_path(did, "diary", "20260909")  → "/kv/hakoniwa-<DID 末尾 8 文字を小文字>/diary-20260909"
     context_path(did, "inf", "6cfafe51-1")  → "/kv/hakoniwa-<DID 末尾 8 文字を小文字>/inf-6cfafe51-1"
       Technocore の名前空間は小文字・数字・-・_ のみ（大文字は 400）なので、末尾 8 文字は小文字にする（決定 11）
