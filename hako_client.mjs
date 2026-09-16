@@ -385,7 +385,7 @@ async function advanceKeep(me, days, k, c) {
   }
 
   if (k.stage === "offered") {
-    const { chosen, why } = chooseKeeper(offer, k.offered_at_ms, c.accepted.get(offer.id) ?? [], c.board.joined, c.st, myDid, now);
+    const { chosen, why } = chooseKeeper(offer, k.offered_at_ms, c.accepted.get(offer.id) ?? [], c.board.joined, c.st, myDid, now, k.prefer ?? null);
     if (chosen === null) {
       if (why.length) jlog(offer.id, "keep-accept", `${k.job}: none to lock yet (${why.join(" | ")})`);
       if (now >= offer.claimByMs) { k.stage = "no_keeper"; k.updated = nowZ(); saveDays(days); jlog(offer.id, "keep-accept", `${k.job}: gave up, claimByMs passed`); }

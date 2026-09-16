@@ -33,7 +33,7 @@ import { fetchJoins, hasRole, parseJoins, parseExportLines as parseBoardLines } 
 import { BOX, BOARD_ROOM, OFFER_ROOM, jobPrefix, noteNs } from "./hako_box.mjs";
 import {
   core, BASE, log, sleep, nowZ, setLogFile, loadSigner, req, readTail, post, notes, fetchExport,
-  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine,
+  readJson, saveJson, readSavedExport, splitNew, decodeAll, indexAccepts, sha256Utf8, hakoLine, checkShelfNote,
 } from "./hako_common.mjs";
 
 const {
@@ -235,18 +235,20 @@ async function step(me) {
         const raw = m ? await notes.get(m[1], m[2]) : null;
         if (raw === null) { jlog(contract, "body", `ノートが読めない ${k.context}; retry next round`); continue; }
         let body; try { body = JSON.parse(raw); } catch { mark(keeps, contract, "no_body"); jlog(contract, "body", "ノートが JSON でない。預からない"); continue; }
-        const vols = Array.isArray(body.volumes) ? body.volumes : [body];
-        if (!vols.length) { mark(keeps, contract, "no_body"); jlog(contract, "body", "冊が 1 つも無い。預からない"); continue; }
-        const bad = vols.find((v) => !v || typeof v.text !== "string" || sha256Utf8(v.text) !== v.sha256);
-        if (bad) {
-          mark(keeps, contract, "no_body"); jlog(contract, "body", "sha256 が本文と合わない。預からない"); continue;
-        }
-        // 6. 本体は自分の保管に。ノートには入れない
+        // 本文が付いていない冊は「もう預かっているか」を見る（棚の更新。決定 34-2）
+        const chk = checkShelfNote(body, { sha256Utf8, has: (h) => existsSync(bodyPath(h)) });
+        if (!chk.ok) { mark(keeps, contract, "no_body"); jlog(contract, "body", `${chk.why}。預からない`); continue; }
+        const vols = chk.volumes;
+        // 6. 本体は自分の保管に。ノートには入れない。すでに持っている冊は期限だけ延ばす
         const until = new Date(Date.now() + KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
         for (const v of vols) {
           mkdirSync(path.dirname(bodyPath(v.sha256)), { recursive: true, mode: 0o700 });
-          writeFileSync(bodyPath(v.sha256), JSON.stringify({ sha256: v.sha256, text: v.text, for: v.for ?? null, date: v.date ?? null, contract, until, kept_at: nowZ() }, null, 1), { mode: 0o600 });
+          let text = v.text;
+          if (text === null) { try { text = JSON.parse(readFileSync(bodyPath(v.sha256), "utf8")).text; } catch { text = null; } }
+          if (typeof text !== "string") { mark(keeps, contract, "no_body"); jlog(contract, "body", `本体が読めない ${v.sha256.slice(0, 16)}。預からない`); text = undefined; break; }
+          writeFileSync(bodyPath(v.sha256), JSON.stringify({ sha256: v.sha256, text, for: v.for ?? null, date: v.date ?? null, contract, until, kept_at: nowZ() }, null, 1), { mode: 0o600 });
         }
+        if (keeps[contract]?.stage === "no_body") continue;
         const kept = vols.map((v) => ({ sha256: v.sha256, for: v.for ?? null }));
         mark(keeps, contract, "kept", { sha256: kept[0].sha256, for: kept[0].for, until, volumes: kept });
         jlog(contract, "body", `ok ${kept.length} 冊 until=${until} 先頭 sha256=${kept[0].sha256.slice(0, 16)}`);

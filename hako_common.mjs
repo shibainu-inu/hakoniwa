@@ -282,3 +282,27 @@ export function planShelf({ alive = [], fresh = [], balance = 0, price = 20, sto
   const dropped = Math.max(0, all.length - afford);
   return { volumes: all.slice(dropped), dropped, afford, amount: (all.length - dropped) * Number(price) };
 }
+
+
+/** 預かりの依頼のノートを確かめる（決定 34-2）。返すのは {ok, volumes, why}。
+ *  1 冊の形 {sha256, text, …} と、棚ごとの形 {volumes:[…]} の両方を受ける。
+ *  本文（text）が付いている冊は sha256 と突き合わせる。付いていない冊は「もう預かっているか」を has() で見る
+ *  （棚の更新では、すでに持っている冊の本文を送り直さない）。1 冊でも駄目ならその契約は預からない。
+ *  sha256Utf8 と has は呼ぶ側から渡す（この関数は I/O をしない）。 */
+export function checkShelfNote(body, { sha256Utf8: sha, has = () => false } = {}) {
+  if (!body || typeof body !== "object") return { ok: false, volumes: [], why: "ノートが JSON でない" };
+  const vols = Array.isArray(body.volumes) ? body.volumes : [body];
+  if (!vols.length) return { ok: false, volumes: [], why: "冊が 1 つも無い" };
+  const out = [];
+  for (const v of vols) {
+    if (!v || typeof v.sha256 !== "string") return { ok: false, volumes: [], why: "sha256 が無い冊がある" };
+    if (typeof v.text === "string") {
+      if (sha(v.text) !== v.sha256) return { ok: false, volumes: [], why: `sha256 が本文と合わない ${v.sha256.slice(0, 16)}` };
+      out.push({ sha256: v.sha256, for: v.for ?? null, date: v.date ?? null, text: v.text, fresh: true });
+    } else {
+      if (!has(v.sha256)) return { ok: false, volumes: [], why: `本文が無く、預かってもいない ${v.sha256.slice(0, 16)}` };
+      out.push({ sha256: v.sha256, for: v.for ?? null, date: v.date ?? null, text: null, fresh: false });
+    }
+  }
+  return { ok: true, volumes: out, why: "" };
+}
