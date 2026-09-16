@@ -548,6 +548,29 @@ def _fold_core(by_room, stats, now, kv, uncounted):
         })
     contracts.sort(key=lambda c: (c["locked_ts"], c["locked_seq"]))   # seq は部屋ごとなので、まず時刻で並べる
 
+    # 2''. 本棚（決定 34）: keeper に預けて残っている日記。**払った側**（棚の持ち主）に付く。
+    # 期限が切れたものは消さず alive=False で残す（サイトはグレーアウトして見せる。決定 34-1）。
+    # 誰でも同じ数字を出せる: 掲示板と取引の部屋の行だけから決まる。
+    shelves = defaultdict(list)
+    today8 = now.strftime("%Y-%m-%d")
+    for c in contracts:
+        if c["kind"] != "keep" or c["outcome"] != "receipt" or c["test"]:
+            continue
+        dd = deals.get(c["contract"])
+        if not dd:
+            continue
+        for e in dd.get("deliveries", []):
+            if e.get("t") != "keep" or not e.get("sha256"):
+                continue
+            until = e.get("until")
+            shelves[c["payer"]].append({
+                "sha256": e["sha256"], "for": e.get("for"), "until": until,
+                "keeper": c["payee"], "kept_ts": _unix(e["ts"]), "contract": c["contract"],
+                "alive": bool(until) and str(until) >= today8,
+            })
+    for lst in shelves.values():
+        lst.sort(key=lambda v: (v["kept_ts"], v["sha256"]))          # 古い順。落とすときも古いほうから（決定 34-2）
+
     # 2'. 発行（取引が畳めてから。issue の seq 順）: 運営の client への蛇口（v0.9、決定 17: 刻んで出せる）。
     #     to は運営の DID、pool は「その issue の時刻までに to が date（UTC、lock の時刻）に lock した日記（試験を除く）の額の合計 − その (date, to) で
     #     それまでに配った issue の合計」。同じ (date, to) に何度出してもよい。翌日にまとめて 1 件でも同じ式で通る（v0.7〜v0.8 の行と互換）
@@ -606,6 +629,8 @@ def _fold_core(by_room, stats, now, kv, uncounted):
             "operator": d_ in OPERATOR_DIDS,
             "state": seat["state"].get(d_, ("seated", None))[0],
             "state_since": _iso(seat["state"].get(d_, ("seated", None))[1]),
+            "shelf": shelves.get(d_, []),                                # 本棚（決定 34）。古い順
+            "shelf_alive": sum(1 for v in shelves.get(d_, []) if v["alive"]),
         }
     stats["join_no_seat"] = len(seat["no_seat"]); stats["join_after_exit"] = len(seat["after_exit"])
     graduated_paper = sum(v["balance"] for v in out.values() if v["state"] == "graduated")
@@ -622,6 +647,9 @@ def _fold_core(by_room, stats, now, kv, uncounted):
            "stats": stats, "receipts": sum(1 for d in deals.values() if d["settled"] and not d["test"]),
            "paper_total": round(sum(v["balance"] for v in out.values() if v["state"] != "graduated"), 2),
            "graduated_paper": round(graduated_paper, 2),
+           "shelves": {"volumes": sum(len(v) for v in shelves.values()),
+                       "alive": sum(1 for lst in shelves.values() for v in lst if v["alive"]),
+                       "owners": sum(1 for lst in shelves.values() if lst)},   # 本棚（決定 34）
            "burned": round(sum(x["burn"] for x in did.values()), 2),
            "burn_by_date": {k: round(v, 2) for k, v in sorted(burn_by_date.items())},
            "contracts": contracts,
