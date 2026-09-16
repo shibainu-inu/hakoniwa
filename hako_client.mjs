@@ -61,6 +61,7 @@ const OPERATOR_WAIT_MIN = Number(process.env.HAKO_CLIENT_OPERATOR_WAIT_MIN ?? BO
 const PER_WORKER_DAY = Number(process.env.HAKO_CLIENT_DIARIES_PER_WORKER_DAY ?? BOX.diaries_per_worker_day);   // 1 worker に 1 日 lock する日記の本数（決定 17 ②）
 const KEEP_PRICE = String(process.env.HAKO_KEEP_PRICE ?? BOX.keep_price);      // 保管代（決定 18。85% が keeper、15% は庭の外へ）
 const KEEP_ENABLED = process.env.HAKO_CLIENT_KEEP !== "0";                     // 0 で預かりを出さない
+const STOP_BELOW = Number(process.env.HAKO_KEEP_STOP_BELOW ?? BOX.starve_below); // 更新して貯えがこれを下回るならやめる（決定 34-2）
 const KEEP_EXPIRES_MIN = Number(process.env.HAKO_KEEP_EXPIRES_MIN ?? 120);
 const KEEP_CLAIMBY_MIN = Number(process.env.HAKO_KEEP_CLAIMBY_MIN ?? 240);
 const KEEP_REFUND_MIN = Number(process.env.HAKO_KEEP_REFUND_MIN ?? 360);
