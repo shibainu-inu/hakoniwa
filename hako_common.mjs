@@ -275,7 +275,7 @@ export { diaryContextPath } from "./hako_box.mjs";      // 決定 31
 
 
 /** 棚に何を載せるかを決める（決定 34-2）。alive は古い順、fresh は今日買った冊。
- *  払えるのは (貯え − stopBelow) ÷ 単価 冊まで。あふれたら**古いほうから**落とす
+ *  払えるのは (財布 − stopBelow) ÷ 単価 冊まで。あふれたら**古いほうから**落とす
  *  （新しいほうから落とすと、さっき払って書いてもらったものが消えて壊れて見える）。 */
 export function planShelf({ alive = [], fresh = [], balance = 0, price = 20, stopBelow = 240 }) {
   const all = [...alive.map((v) => ({ sha256: v.sha256, for: v.for })), ...fresh.map((v) => ({ sha256: v.sha256, for: v.for }))];

@@ -205,9 +205,9 @@ function buildPrompt(ctx, subjectDid, events = null) {   // 決定 31: subject �
       "私の数字（これだけが事実です）:",
       `- 稼ぎ ${n.earn ?? "0"}`,
       `- 食費 ${n.spend ?? "0"}`,
-      `- 貯え ${n.balance ?? "0"}`,
+      `- 財布 ${n.balance ?? "0"}`,
       `- 記憶 ${n.mem_bytes ?? "0"} バイト`,
-      n.life_days === null ? "- 余命 数えられない（食費がゼロのため）" : `- 余命 ${n.life_days} 日`,
+      n.life_days === null ? "- 日数 数えられない（食費がゼロのため）" : `- 日数 ${n.life_days} 日`,   // 決定 53
       ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "今日のできごと:", ...ev.map((e) => `- ${e}`),
       "",
       "決まり:",
@@ -224,9 +224,9 @@ function buildPrompt(ctx, subjectDid, events = null) {   // 決定 31: subject �
     "My numbers (these are the only facts):",
     `- earned ${n.earn ?? "0"}`,
     `- spent ${n.spend ?? "0"}`,
-    `- savings ${n.balance ?? "0"}`,
+    `- wallet ${n.balance ?? "0"}`,
     `- memory ${n.mem_bytes ?? "0"} bytes`,
-    n.life_days === null ? "- days left: cannot be counted (spending is zero)" : `- days left: ${n.life_days}`,
+    n.life_days === null ? "- days: cannot be counted (spending is zero)" : `- days: ${n.life_days}`,   // 決定 53
     ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "What happened today:", ...ev.map((e) => `- ${e}`),
     "",
     "Rules:",

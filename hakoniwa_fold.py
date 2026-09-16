@@ -44,19 +44,19 @@ hako_box.json（HAKO_BOX で場所を変えられる）から読む（決定 16�
        diary 行は hako_rules.check_diary の結果を参考値として付ける。条件 4 の context は <dir>/kv/ の写し
        （worker のノート hako_rules.context_path(payee, "diary", offer の日)。いちばん古い写し）を読む。写しが無ければ ok=null のまま。
        条件 2 の for は worker の DID（v0.7: worker が自分の日記を書く）
-  5. DID ごとに 稼ぎ(earn)・食費(spend)・貯え(balance)・記憶(mem_bytes)・余命(life_days) を出す
-       貯え = 1,000 ＋ 稼ぎ ＋ 発行(issued) − 食費（取引・罰金・家賃）
+  5. DID ごとに 稼ぎ(earn)・食費(spend)・財布(balance)・記憶(mem_bytes)・余命(life_days) を出す
+       財布 = 1,000 ＋ 稼ぎ ＋ 発行(issued) − 食費（取引・罰金・家賃）
        記憶の家賃は 00:00Z 刻み。各 00:00Z に、その時点で有効な mem（最後の mem 行）の bytes ぶん（1 KiB につき 1 PAPER）を引く。
        最初の請求は mem 行の後の最初の 00:00Z。mem を出し直したら次の 00:00Z から新しい bytes。
-       貯え < その日の家賃なら引かず眠る（sleep_days +1）。眠りが 7 日続いたら mem_bytes を 0 にして記憶は消える
-       余命 = 貯え ÷ 直近 7 日の 1 日あたり食費。食費ゼロなら null
+       財布 < その日の家賃なら引かず眠る（sleep_days +1）。眠りが 7 日続いたら mem_bytes を 0 にして記憶は消える
+       余命 = 財布 ÷ 直近 7 日の 1 日あたり食費。食費ゼロなら null
        box.contracts: lock された契約ごとに 1 要素（契約の線の元データ。hako_avatar.links_from_box が読む）。
        contract / kind / payer / payee / room / locked_seq / locked_ts / settled_seq / settled_ts / outcome / dispute / test。
        時刻は unix 秒、outcome は receipt / refunded / null、test の契約も同じ配列に入れる（数字には入れない）
   6. 席の層（お金の流れは変えない）。join は seq 順に席（SEATS=72、運営の DID を含む）まで。満席の join は数えない（1,000 も役も無い）。
-       退場は 3 つ: 枯渇 starved（貯えが STARVE_BELOW=240 を下回った時点。戻れない）、席を離れた left（00:00Z を 2 回、掲示板の行も
+       退場は 3 つ: 枯渇 starved（財布が STARVE_BELOW=240 を下回った時点。戻れない）、席を離れた left（00:00Z を 2 回、掲示板の行も
        lock された契約への関わりも無いまま越えた。空席があれば join で戻れる）、卒業 graduated（累計の稼ぎが GRADUATE_EARN=1,500 に達した
-       receipt の時点。貯えは paper_total から外れて box.graduated_paper に載る。戻らない）。運営の DID は退場も卒業もしない。
+       receipt の時点。財布は paper_total から外れて box.graduated_paper に載る。戻らない）。運営の DID は退場も卒業もしない。
        席の無い DID との契約も数字には入る（避けるのは script の側）。数えない join の集合が変わらなくなるまで畳み直す
 出力 --json: {"box": {...}, "did": {did: {...}}}。did の値のキー名は README「fold の出力」の一覧で固定。
 """
@@ -92,7 +92,7 @@ OPERATOR_DIDS = ("did:key:z6MkmG1MiumCr8Jk6vL5qt2A1XzEst6CVT5rwRHUHYwKPvqA",   #
                  "did:key:z6Mkig6Ex8yT25TbmV7TFEJBGPAE8aq6DpXbZHMyrJkq88xr",   # …88xr worker・client・miner
                  "did:key:z6Mkq52a8jJna9yBCGyTL6hbMuqQiMbxihFcuQeSUuyGhE3T")   # …hE3T miner・worker・client
 SEATS = 72                    # 席（運営の DID を含む）
-STARVE_BELOW = 240.0          # 枯渇: 貯えが一番安い推論代を下回る
+STARVE_BELOW = 240.0          # 枯渇: 財布が一番安い推論代を下回る
 GRADUATE_EARN = 1500.0        # 卒業: 累計の稼ぎがこれに達した receipt
 LEAVE_AFTER_MIDNIGHTS = 2     # 席を離れる: 00:00Z を 2 回、何もしないまま越えた
 DIARY_PER_CLIENT_DAY = 20     # 1 つの client が 1 日（UTC、lock の時刻）に lock できる日記
@@ -306,7 +306,7 @@ def fold(entries, now=None, kv=None, gaps=None):
     """entries: [(room, generation, row)]、kv: load_kv の戻り値、gaps: load_gaps の戻り値（box.export_gaps に写すだけ） → {"box": ..., "did": ...}
 
     署名の検証は 1 回。席（SEATS）に入れなかった join と退場後の join は数えないので、その集合が変わらなくなるまで畳み直す
-    （数えない join の DID の取引は数えず、それが誰かの貯えと退場に響きうるため。普通は 1〜2 回で止まる）"""
+    （数えない join の DID の取引は数えず、それが誰かの財布と退場に響きうるため。普通は 1〜2 回で止まる）"""
     now = now or dt.datetime.now(dt.timezone.utc)
     kv = kv or {}
     parse_stats = {"rows": 0, "dup": 0, "unsigned": 0, "bad_sig": 0, "frames": 0}
@@ -679,7 +679,7 @@ def _validator_at(rules, t):
 
 
 def _seats(joins, activity, ledgers, did, now):
-    """席の層。時刻順に join・活動・貯えと稼ぎの点・00:00Z を見て、席（SEATS）と退場（枯渇・席を離れる・卒業）を決める。
+    """席の層。時刻順に join・活動・財布と稼ぎの点・00:00Z を見て、席（SEATS）と退場（枯渇・席を離れる・卒業）を決める。
     お金の流れは変えない（席の無い DID との契約も数字には入る。避けるのは script の側）。
     → {"state": did → (state, since), "taken": 席の数, "no_seat": [join], "after_exit": [join]}
        state: seated / left / starved / graduated / no_seat。運営の DID は退場も卒業もしない"""
@@ -787,7 +787,7 @@ def _ledger(x, now):
             events.append((t, 1, "tick", 0.0)); t += dt.timedelta(days=1)
     balance, spend, earn_cum, sleep, erased_at = float(INITIAL), 0.0, 0.0, 0, None
     entries = []                                            # (dt, kind, amount)。家賃も spend として並ぶ
-    points = []                                             # (dt, その時点の貯え, 累計の稼ぎ)。席の層が枯渇と卒業を見る
+    points = []                                             # (dt, その時点の財布, 累計の稼ぎ)。席の層が枯渇と卒業を見る
     for t, _, kind, amount in sorted(events, key=lambda e: (e[0], e[1])):
         if kind == "earn" or kind == "issued":
             balance += amount; entries.append((t, kind, amount))

@@ -61,7 +61,7 @@ const OPERATOR_WAIT_MIN = Number(process.env.HAKO_CLIENT_OPERATOR_WAIT_MIN ?? BO
 const PER_WORKER_DAY = Number(process.env.HAKO_CLIENT_DIARIES_PER_WORKER_DAY ?? BOX.diaries_per_worker_day);   // 1 worker に 1 日 lock する日記の本数（決定 17 ②）
 const KEEP_PRICE = String(process.env.HAKO_KEEP_PRICE ?? BOX.keep_price);      // 保管代（決定 18。85% が keeper、15% は庭の外へ）
 const KEEP_ENABLED = process.env.HAKO_CLIENT_KEEP !== "0";                     // 0 で預かりを出さない
-const STOP_BELOW = Number(process.env.HAKO_KEEP_STOP_BELOW ?? BOX.starve_below); // 更新して貯えがこれを下回るならやめる（決定 34-2）
+const STOP_BELOW = Number(process.env.HAKO_KEEP_STOP_BELOW ?? BOX.starve_below); // 更新して財布がこれを下回るならやめる（決定 34-2）
 const KEEP_EXPIRES_MIN = Number(process.env.HAKO_KEEP_EXPIRES_MIN ?? 120);
 const KEEP_CLAIMBY_MIN = Number(process.env.HAKO_KEEP_CLAIMBY_MIN ?? 240);
 const KEEP_REFUND_MIN = Number(process.env.HAKO_KEEP_REFUND_MIN ?? 360);
@@ -119,7 +119,7 @@ function readStats() {
   const did = stats.did ?? {};
   return { ok: true, operators, generated: stats.box?.generated ?? null,
     stateOf: (d) => (did[d] ? (did[d].state ?? "seated") : "seated"),   // fold にまだ無い DID（入ったばかり）は seated 扱い
-    // 本棚と貯え（決定 34）。fold が出す shelf は古い順。生きている冊だけ返す
+    // 本棚と財布（決定 34）。fold が出す shelf は古い順。生きている冊だけ返す
     shelfOf: (d) => ((did[d]?.shelf ?? []).filter((v) => v && v.alive)),
     balanceOf: (d) => Number(did[d]?.balance ?? 0) };
 }
@@ -299,7 +299,7 @@ async function step(me) {
   }
 
   // 4'. 保管（決定 34）: **棚ごと 1 契約**。いま残っている冊と、今日買った日記をまとめて次の KEEP_DAYS 日ぶん預ける。
-  //     払えるぶんだけ残し、落とすのは古いほうから（決定 34-2）。更新して貯えが STOP_BELOW を下回るならやめる。
+  //     払えるぶんだけ残し、落とすのは古いほうから（決定 34-2）。更新して財布が STOP_BELOW を下回るならやめる。
   //     すでに預かっている冊は本文を送らない（keeper が本体を持っている）。新しい冊だけ本文を付ける。
   const keeps = (day.keeps ??= {});
   if (KEEP_ENABLED && !DRY_RUN) {
@@ -322,7 +322,7 @@ async function step(me) {
     if (pending) {
       jlog(pending.job, "shelf", `進行中の棚の契約がある（${pending.stage}）。次の周`);
     } else if (!volumes.length) {
-      if (dropped) jlog("-", "shelf", `貯え ${balance} では 1 冊も残せない（240 を残すと 0 冊）`);
+      if (dropped) jlog("-", "shelf", `財布 ${balance} では 1 冊も残せない（240 を残すと 0 冊）`);
     } else if (!fresh.length && !dueSoon) {
       jlog("-", "shelf", `棚 ${volumes.length} 冊、期限 ${soonest} まで余裕。新しい冊も無いので出さない`);
     } else {
@@ -347,7 +347,7 @@ async function step(me) {
           await post(me, OFFER_ROOM, offer);
           keeps[jobId].stage = "offered"; keeps[jobId].updated = nowZ(); saveDays(days);
           jlog(offer.id, "shelf-offer", `ok ${jobId} ${volumes.length} 冊 amount=${amount}`
-               + (dropped ? ` 古いほうから ${dropped} 冊 落とした（貯え ${balance}）` : "")
+               + (dropped ? ` 古いほうから ${dropped} 冊 落とした（財布 ${balance}）` : "")
                + (fresh.length ? ` 新しい ${fresh.length} 冊` : ""));
         } catch (e) { jlog(offer.id, "shelf-offer", `fail ${e.message}`); }
       }
