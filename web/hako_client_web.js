@@ -133,9 +133,13 @@ export function outlook(stats, st, me) {
   }
   return { balance: base - since, alive, seated: (d?.state ?? "seated") === "seated", generatedMs };
 }
-/** もう 1 本 頼めるか: 日記代と、その 1 冊の預かり代を払っても starve_below を下回らない */
-export function canOrder(balance) {
-  return balance - Number(box.diary_price) - Number(box.keep_price) >= Number(box.starve_below);
+/** もう 1 本 頼めるときに要る額: 日記代 ＋ 預かり代 ×（いま預けている日記 ＋ 新しい 1 つ）＋ 残す starve_below（決定 34-2: 棚ごと預け直す） */
+export function orderNeed(alive = 0) {
+  return Number(box.diary_price) + Number(box.keep_price) * (Number(alive) + 1) + Number(box.starve_below);
+}
+/** もう 1 本 頼めるか */
+export function canOrder(balance, alive = 0) {
+  return balance >= orderNeed(alive);
 }
 
 export class Client {
@@ -189,7 +193,7 @@ export class Client {
     if (!stats.did?.[me]) return { ok: false, why: "not_in_fold" };   // 席を取れたかは fold の後でないと分からない（満席の join は数えられない）
     const view = outlook(stats, st, me);
     if (!view.seated) return { ok: false, why: "not_seated" };
-    if (!canOrder(view.balance)) return { ok: false, why: "wallet", balance: view.balance };
+    if (!canOrder(view.balance, view.alive.length)) return { ok: false, why: "wallet", balance: view.balance, need: orderNeed(view.alive.length) };
     const date8 = today8();
     const n = nextSerial(st.serial[date8]);
     const t = Date.now();

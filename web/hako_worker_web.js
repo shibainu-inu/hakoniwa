@@ -196,8 +196,8 @@ const numText = (v) => (v === null || v === undefined ? null : (typeof v === "st
 // 今日のできごと（依頼文の「動作報告」の材料。DID の表示は数字を含むので入れない。数字は本文に出さないよう言葉で）
 // 決定 31: 日記は払った側（client）のもの。主語は「私＝払った HAKO」で、できごともその一日
 const TODAY_EVENTS = {
-  ja: ["今日の日記を書いてもらう仕事を一つ出した", "その代金を払った", "書き上がった日記は、私の記録として残る"],
-  en: ["put out one job: have my diary for today written", "paid the fee for it", "the finished diary stays as my own record"],
+  ja: ["今日の自分の一日を、他の HAKO に日記にしてもらうことにした", "そのぶんの PAPER を払った", "書き上がった日記は、私の一日の記録として残る"],
+  en: ["asked another HAKO to turn my own day into a diary", "paid PAPER for it", "the finished diary stays as the record of my day"],
 };
 export function buildPrompt(ctx, did, events = null) {
   const ev = events ?? TODAY_EVENTS[ctx.lang === "ja" ? "ja" : "en"];
@@ -208,14 +208,14 @@ export function buildPrompt(ctx, did, events = null) {
     return ["あなたは HAKONIWA という庭に住む HAKO です。今日の日記を、一人称「私」で書いてください。", "",
       "私の数字（これだけが事実です）:", `- 稼ぎ ${n.earn ?? "0"}`, `- 食費 ${n.spend ?? "0"}`, `- 財布 ${n.balance ?? "0"}`, `- 記憶 ${n.mem_volumes ?? "0"} 冊`,
       n.life_days === null ? "- 日数 数えられない（食費がゼロのため）" : `- 日数 ${n.life_days} 日`,   // 決定 53
-      ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "今日のできごと:", ...ev.map((e) => `- ${e}`), "", "決まり:", "- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）", "- 今日のできごとを主語に、何をして、どう感じたかを書く（動作の報告。数字は書かなくてよい）", "- 数字を並べない。書くなら文の中に 1 つか 2 つまで", "- 季節や祝日や日付を勝手に決めない（挨拶で始めない。見出しや箇条書きにしない）",
+      ...(words.length ? ["", `私の性格: ${words.join("、")}`] : []), "", "今日のできごと:", ...ev.map((e) => `- ${e}`), "", "決まり:", "- この日記は私（書いてもらった HAKO）の一日のもの。私が誰かの日記を書いた、誰かの仕事を手伝った、とは書かない", "- 1〜2 文、120 文字以内（上限は 140 文字。途中で切れないように短く）", "- 今日のできごとを主語に、何をして、どう感じたかを書く（動作の報告。数字は書かなくてよい）", "- 数字を並べない。書くなら文の中に 1 つか 2 つまで", "- 季節や祝日や日付を勝手に決めない（挨拶で始めない。見出しや箇条書きにしない）",
       `- 書いてよい数字は上の ${allowed.length} つだけ。回数や日付や時間は数字で書かず、言葉で書く（「一回」「きのう」）`,
       "- 上の数字を変えない。増やさない。丸めない", "- 定型の言い回しを避け、今日のできごとと数字から言葉を選ぶ", "- 日記の本文だけを返す。前置き、引用符、説明は付けない"].join("\n");
   }
   return ["You are a HAKO living in a garden called HAKONIWA. Write today's diary entry in the first person.", "",
     "My numbers (these are the only facts):", `- earned ${n.earn ?? "0"}`, `- spent ${n.spend ?? "0"}`, `- wallet ${n.balance ?? "0"}`, `- memory ${n.mem_volumes ?? "0"} volumes`,
     n.life_days === null ? "- days: cannot be counted (spending is zero)" : `- days: ${n.life_days}`,   // 決定 53
-    ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "What happened today:", ...ev.map((e) => `- ${e}`), "", "Rules:", "- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)", "- Lead with what happened today: what I did and how it felt (a report of my actions; the numbers are optional)", "- Do not list numbers; at most one or two inside a sentence", "- Do not invent the season, a holiday, or the date (no greetings, no headings, no bullet lists)",
+    ...(words.length ? ["", `My character: ${words.join(", ")}`] : []), "", "What happened today:", ...ev.map((e) => `- ${e}`), "", "Rules:", "- This diary is about my own day (I am the HAKO who asked for it). Do not say that I wrote someone else's diary or helped with someone's job", "- One or two sentences, 120 characters or fewer (hard limit 140; keep it short so nothing is cut off)", "- Lead with what happened today: what I did and how it felt (a report of my actions; the numbers are optional)", "- Do not list numbers; at most one or two inside a sentence", "- Do not invent the season, a holiday, or the date (no greetings, no headings, no bullet lists)",
     `- The only digits you may write are the ${allowed.length} numbers above. Do not write counts, dates, or times as digits; use words`,
     "- Do not change, add to, or round the numbers above", "- Avoid stock phrases; choose words from what happened today and from the numbers",
     "- Return only the diary text. No preamble, quotation marks, or explanation"].join("\n");
