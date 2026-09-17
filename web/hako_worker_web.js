@@ -2,7 +2,7 @@
 // ページを開いている間だけ動き、今日の日記を N 本（latest.json の box.config の diaries_per_worker_day、いま 3）まで閉じる: 運営 client の「あなたの今日の日記を書いて」の offer を受け、
 // 自分の数字のノートを置き、miner から推論を買って自分の日記を書き、納品して reveal する。鍵は join ページのもの（外に出ない）。
 //
-// 読むもの: サイトの latest.json（自分の 5 つの数字、運営 DID）、運営 client のノート /kv/hakoniwa-<client 末尾 8>/open（開いている offer）、
+// 読むもの: サイトの latest.json（自分の 5 つの数字、運営 DID）、client（運営と、席にいる参加者。決定 68）のノート /kv/hakoniwa-<client 末尾 8>/open（開いている offer）、
 //   掲示板の export（join 済み DID と役。署名は WebCrypto で検証）、取引の部屋（?format=json）、/r/tclk-offers?since=（自分の推論 offer への accept）
 // 書くもの: 自分のノート（context と推論の依頼文）、accept / 推論 offer / lock / receipt / diary / reveal（全部 room|nonce|text の署名付き POST）
 // 状態: localStorage hako_work_v1（preimage を含む。控えのファイルとは別）
@@ -12,7 +12,8 @@ import * as tclk from "./hako_tclk.js";
 
 export const VENUE = "https://technocore.chat";
 // 箱の設定（決定 16 ②）: 既定は hakoniwa。サイトの latest.json の box.config（hako_box.json の写し）で上書きする（applyBox）
-export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240", diaries_per_worker_day: 3, random_accept_pct: 55, random_keep_pct: 15 };
+export const box = { name: "hakoniwa", board: "hakoniwa-board", offers: "tclk-offers", inference_price: "240", diaries_per_worker_day: 3, random_accept_pct: 55, random_keep_pct: 15,
+  diary_price: "400", keep_price: "20", starve_below: 240, operator_wait_min: 30 };   // 下の 4 つはブラウザの client（hako_client_web.js）が読む
 export function applyBox(cfg) {
   if (!cfg || typeof cfg !== "object") return box;
   if (typeof cfg.box === "string" && cfg.box) box.name = cfg.box;
@@ -26,12 +27,15 @@ export function applyBox(cfg) {
     const m = Number(v[k]);
     if (Number.isInteger(m) && m >= 0 && m <= 100) box[k] = m;
   }
+  for (const k of ["diary_price", "keep_price"]) { if (/^[1-9][0-9]*$/.test(String(v[k] ?? ""))) box[k] = String(v[k]); }
+  for (const k of ["starve_below", "operator_wait_min"]) { const m = Number(v[k]); if (Number.isFinite(m) && m >= 0) box[k] = m; }
   return box;
 }
 const STATE_KEY = "hako_work_v1";
 // 推論代は box.inference_price（ルール v0.7: 運営の miner は 240 以上なら受ける）
 const INF_EXPIRES_MIN = 120, INF_CLAIMBY_MIN = 240, INF_REFUND_MIN = 360;
 const INF_RETRIES = 2;
+const MIN_WORK_MIN = 90;                       // offer の claimByMs までに要る時間（lock 待ち 20 分＋推論＋納品）
 const LOCK_WAIT_MIN = 20;                      // client の lock を待つ上限（client は 5 分周期。運営 worker を待たせる 30 分より短くてよい: 参加者が先）
 const GATE_MS = 30_000;
 const TICK_MS = 30_000;
@@ -64,7 +68,7 @@ export function pubOfDid(did) {
 }
 export async function sha256Hex(s) { return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(s)))); }
 const toAscii = (s) => s.replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
-const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
+export const hakoLine = (obj) => "hakoniwa/0 " + toAscii(JSON.stringify(obj));
 export const noteNs = (did) => `${box.name}-${String(did).slice(-8).toLowerCase()}`;
 export const contextPath = (did, kind, suffix) => `/kv/${noteNs(did)}/${kind}-${suffix}`;
 // 日記の数字のノート（決定 31）。置くのは worker、中身は払った側（client）の数字
@@ -72,10 +76,10 @@ export const diaryContextPath = (workerDid, clientDid, date8) =>
   contextPath(workerDid, "diary", `${date8}-${String(clientDid).slice(-8).toLowerCase()}`);
 const short = (d) => "…" + String(d).slice(-5);
 const iso = (ms) => new Date(ms).toISOString();
-const nowZ = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+export const nowZ = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const randomHex = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
-const today8 = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
+export const randomHex = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
+export const today8 = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
 // ── 会場 I/O ──
 async function verifyRow(room, m) {
@@ -85,14 +89,14 @@ async function verifyRow(room, m) {
     return await crypto.subtle.verify("Ed25519", key, unb64u(String(m.sig)), enc.encode(`${room}|${m.nonce}|${collapse(String(m.text))}`));
   } catch { return false; }
 }
-async function readTail(room) {
+export async function readTail(room) {
   const r = await fetch(`${VENUE}/r/${room}?format=json`);
   if (r.status === 404) return [];
   if (!r.ok) throw new Error(`read ${room}: ${r.status}`);
   const v = await r.json();
   return Array.isArray(v?.messages) ? v.messages : [];
 }
-async function readSince(room, since, limit = 200) {
+export async function readSince(room, since, limit = 200) {
   const r = await fetch(`${VENUE}/r/${room}?format=json&since=${since}&limit=${limit}`);
   if (r.status === 404) return { messages: [], last_seq: since };
   if (!r.ok) throw new Error(`read ${room} since: ${r.status}`);
@@ -267,12 +271,18 @@ export class Worker {
   async stats() {
     try { const r = await fetch(this.statsUrl, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch { return null; }
   }
-  /** 運営 client のノート /kv/hakoniwa-<末尾 8>/open から、開いている日記 offer を集める */
+  /** client のノート /kv/hakoniwa-<末尾 8>/open から、開いている日記 offer を集める。
+   *  読むのは運営 client と、席にいて client 役の参加者（決定 68: ブラウザの client もこのノートに出す）。運営を先に並べる */
   async openOffers(stats) {
     const ops = Array.isArray(stats?.box?.operators) ? stats.box.operators : [];
+    const others = Object.entries(stats?.did ?? {})
+      .filter(([d, v]) => !ops.includes(d) && d !== this.me.did && (v?.state ?? "seated") === "seated" && Array.isArray(v?.roles) && v.roles.includes("client"))
+      .map(([d]) => d);
+    const clients = [...others, ...ops];                 // 参加者の offer を先に（運営 client は Node の worker も受ける）
+    const raws = await Promise.all(clients.map((d) => notes.get(noteNs(d), "open").catch(() => null)));
     const out = [];
-    for (const d of ops) {
-      const raw = await notes.get(noteNs(d), "open").catch(() => null);
+    for (const [i, d] of clients.entries()) {
+      const raw = raws[i];
       if (!raw) continue;
       let v; try { v = JSON.parse(raw); } catch { continue; }
       for (const o of v?.open ?? []) {
@@ -283,6 +293,9 @@ export class Worker {
         // frame をそのまま渡すと id 自身が混ざって必ず不一致になる（2026-09-11 に …JbxX の初試験で「開いている日記 offer が無い」になった原因）
         try { const { id, ...fields } = f; if (tclk.offerId(fields) !== id) continue; } catch { continue; }
         if (Date.now() >= f.expiresMs || Date.now() >= f.claimByMs) continue;
+        // ノートは誰でも書き換えられる。日記代どおりで、推論を買ってから書き上げる時間が残っている offer だけ（決定 68）
+        if (String(f.amount) !== String(box.diary_price)) continue;
+        if (f.claimByMs - Date.now() < MIN_WORK_MIN * 60_000 || f.refundAfterMs - f.claimByMs < 60 * 60_000) continue;
         out.push({ client: d, seq: o.seq, frame: f });
       }
     }
@@ -292,7 +305,7 @@ export class Worker {
   async tick() {
     const me = this.me.did;
     const date8 = today8();
-    if (this.st && this.st.date !== date8 && ["done", "gave_up"].includes(this.st.stage)) { this.st = null; }   // 昨日の分は終わり
+    if (this.st && this.st.date !== date8 && ["done", "gave_up", "idle", "no_lock"].includes(this.st.stage)) { this.st = null; }   // 昨日の分は終わり（仕事待ちのまま 0 時をまたいでも）
     if (!this.st) this.st = { date: date8, stage: "idle", log: [] };
     const st = this.st;
     try {
@@ -323,7 +336,9 @@ export class Worker {
         const e = joined.get(subject);
         const note = { did: subject, date: `${date8.slice(0, 4)}-${date8.slice(4, 6)}-${date8.slice(6, 8)}`, lang: e?.lang ?? "en", roles: e?.roles ?? [],
           earn: int(src.earn), spend: int(src.spend), balance: int(src.balance), mem_volumes: int(src.mem_volumes), life_days: int(src.life_days) };
-        const notePath = diaryContextPath(me, subject, date8);
+        const offerDate = String(pick.frame.job.id).match(/-(\d{8})-\d+$/)?.[1] ?? date8;   // 日記の日付は offer の日（client の合格条件 2）。0 時をまたいでも変えない
+        note.date = `${offerDate.slice(0, 4)}-${offerDate.slice(4, 6)}-${offerDate.slice(6, 8)}`;
+        const notePath = diaryContextPath(me, subject, offerDate);
         const [, ns, key] = notePath.match(/^\/kv\/([^/]+)\/([^/]+)$/);
         if (!(await notes.set(ns, key, JSON.stringify(note)))) { this.log("note", `ノートを書けない ${notePath}`); return; }
         this.log("note", `ok ${notePath} ${NUM_KEYS.map((k) => `${k}=${note[k]}`).join(",")}${d ? "" : " (fresh)"}`);
@@ -332,7 +347,7 @@ export class Worker {
         const accept = { type: "accept", ...core, contract: tclk.contractId(pick.frame, core) };
         const text = tclk.encodeFrame(accept);
         this.set("accepting", { offer: pick.frame, client: pick.client, job: pick.frame.job.id, ctx: note, note: notePath, accept, accept_text: text,
-          contract: accept.contract, room: tclk.dealRoom(accept.contract), preimage: hl.preimage, statement: hl.hash, accepted_at_ms: Date.now(),
+          offer_date: offerDate, contract: accept.contract, room: tclk.dealRoom(accept.contract), preimage: hl.preimage, statement: hl.hash, accepted_at_ms: Date.now(),
           claimByMs: pick.frame.claimByMs, refundAfterMs: pick.frame.refundAfterMs, tried: [...tried, pick.frame.id], inf: null });
         await this.me.post(box.offers, text, { gateUntilMs: pick.frame.claimByMs, onWait: (n) => this.log("accept", `gate busy, retry ${n}`) });
         this.set("accepted");
@@ -466,7 +481,8 @@ export class Worker {
           if (!r2.ok) { this.set("gave_up"); this.log("diary", "本文が合格条件を通らない。納品しない"); return; }
           text = fixed;
         }
-        const date = `${st.date.slice(0, 4)}-${st.date.slice(4, 6)}-${st.date.slice(6, 8)}`;
+        const d8 = st.offer_date ?? st.date;
+        const date = `${d8.slice(0, 4)}-${d8.slice(4, 6)}-${d8.slice(6, 8)}`;
         const diary = { t: "diary", contract: st.contract, for: st.client, date, text, sha256: await sha256Hex(text), model: st.inf.model ?? "unknown", nonce: randomHex(8) };   // 決定 31
         this.set("delivering", { diary });
         await this.me.post(st.room, hakoLine(diary), { gateUntilMs: st.claimByMs, onWait: (k) => this.log("diary", `gate busy, retry ${k}`) });
