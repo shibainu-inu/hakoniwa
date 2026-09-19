@@ -143,9 +143,14 @@ def apply_box(cfg):
 
 
 def box_summary(cfg=None):
-    """fold の出力 box.config: 箱の名前、設定ファイルの sha256、数えるのに使った値"""
+    """fold の出力 box.config: 箱の名前、設定ファイルの sha256、数えるのに使った値
+
+    設定ファイルの置き場所（_path）は出さない。機械ごとに違う絶対パスが公開の latest.json に載るのを避け、
+    同じ export を誰が fold しても box.config が同じになるようにするため（2026-09-19）。
+    どの設定を使ったかは sha256 で分かる。
+    """
     cfg = cfg or BOX
-    return {"box": cfg["box"], "path": cfg["_path"], "sha256": cfg["_sha256"], "values": {k: cfg[k] for k in BOX_KEYS if k in cfg}, "board": cfg["board"]}
+    return {"box": cfg["box"], "sha256": cfg["_sha256"], "values": {k: cfg[k] for k in BOX_KEYS if k in cfg}, "board": cfg["board"]}
 
 
 BOX = apply_box(load_box())
